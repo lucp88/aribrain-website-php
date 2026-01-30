@@ -1,0 +1,18 @@
+# Config with credentials
+config/config.php
+
+# Database setup (contains credentials after use)
+setup-database.php
+
+# OS files
+.DS_Store
+*/.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
