@@ -104,12 +104,11 @@ $papers = $db->query("SELECT * FROM publications WHERE pub_type = 'paper' ORDER 
                     </svg>
                     Publications
                 </a>
-                <a href="#" class="admin-nav-item disabled" onclick="return false;">
+                <a href="index.php?page=admin/forum" class="admin-nav-item">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                     </svg>
                     Forum
-                    <span class="admin-badge">Soon</span>
                 </a>
             </nav>
             

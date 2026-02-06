@@ -53,12 +53,11 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
                     </svg>
                     Publications
                 </a>
-                <a href="#" class="admin-nav-item disabled" onclick="return false;">
+                <a href="index.php?page=admin/forum" class="admin-nav-item">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                     </svg>
                     Forum
-                    <span class="admin-badge">Soon</span>
                 </a>
                 <a href="#" class="admin-nav-item disabled" onclick="return false;">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -116,7 +115,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
                         </div>
                     </a>
                     
-                    <div class="admin-card">
+                    <a href="index.php?page=admin/forum" class="admin-card">
                         <div class="admin-card-icon forum">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
@@ -124,10 +123,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
                         </div>
                         <div class="admin-card-content">
                             <h3>Forum</h3>
-                            <p>Moderate forum posts and manage categories</p>
-                            <span class="admin-card-status">Coming soon</span>
+                            <p>Moderate forum posts and manage questions</p>
+                            <span class="admin-card-status admin-card-status-active">Active</span>
                         </div>
-                    </div>
+                    </a>
                     
                     <div class="admin-card">
                         <div class="admin-card-icon users">

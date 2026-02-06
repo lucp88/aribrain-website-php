@@ -33,25 +33,56 @@ CREATE TABLE IF NOT EXISTS publications (
     FOREIGN KEY (created_by) REFERENCES admins(id) ON DELETE SET NULL
 );
 
-CREATE TABLE IF NOT EXISTS forum_categories (
+CREATE TABLE IF NOT EXISTS forum_tags (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    sort_order INT DEFAULT 0,
-    is_active BOOLEAN DEFAULT TRUE,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    slug VARCHAR(50) NOT NULL UNIQUE,
+    color VARCHAR(7) DEFAULT '#6bcf8e',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS forum_posts (
+CREATE TABLE IF NOT EXISTS forum_questions (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    category_id INT,
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
-    author_name VARCHAR(100),
+    author_name VARCHAR(100) NOT NULL,
     author_email VARCHAR(255),
-    is_approved BOOLEAN DEFAULT FALSE,
-    is_pinned BOOLEAN DEFAULT FALSE,
+    is_approved BOOLEAN DEFAULT TRUE,
+    is_answered BOOLEAN DEFAULT FALSE,
+    is_featured BOOLEAN DEFAULT FALSE,
+    views INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS forum_question_tags (
+    question_id INT NOT NULL,
+    tag_id INT NOT NULL,
+    PRIMARY KEY (question_id, tag_id),
+    FOREIGN KEY (question_id) REFERENCES forum_questions(id) ON DELETE CASCADE,
+    FOREIGN KEY (tag_id) REFERENCES forum_tags(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS forum_replies (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    question_id INT NOT NULL,
+    content TEXT NOT NULL,
+    author_name VARCHAR(100) NOT NULL,
+    author_email VARCHAR(255),
+    is_admin_reply BOOLEAN DEFAULT FALSE,
+    admin_id INT,
+    is_approved BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (category_id) REFERENCES forum_categories(id) ON DELETE SET NULL
+    FOREIGN KEY (question_id) REFERENCES forum_questions(id) ON DELETE CASCADE,
+    FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE SET NULL
 );
+
+INSERT IGNORE INTO forum_tags (name, slug, color) VALUES 
+('Installation', 'installation', '#3b82f6'),
+('Analysis', 'analysis', '#8b5cf6'),
+('Bug Report', 'bug-report', '#ef4444'),
+('Feature Request', 'feature-request', '#f59e0b'),
+('General', 'general', '#6bcf8e'),
+('fMRI', 'fmri', '#ec4899'),
+('TDP', 'tdp', '#14b8a6');

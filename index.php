@@ -3,7 +3,7 @@ require_once __DIR__ . '/config/config.php';
 
 $page = isset($_GET['page']) ? $_GET['page'] : 'home';
 
-$adminPages = ['admin/login', 'admin/dashboard', 'admin/publications'];
+$adminPages = ['admin/login', 'admin/dashboard', 'admin/publications', 'admin/forum'];
 if (in_array($page, $adminPages)) {
     $pageFile = __DIR__ . '/pages/' . $page . '.php';
     if (file_exists($pageFile)) {
