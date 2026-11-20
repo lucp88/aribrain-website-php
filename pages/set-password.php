@@ -1,69 +1,42 @@
 <?php
-require_once __DIR__ . '/../config/database.php';
-require_once __DIR__ . '/../config/config.php';
+// Handles both invitation links (status 'invited') and password reset links (status 'active').
+require_once __DIR__ . '/../includes/bootstrap.php';
 
-$db = Database::getInstance()->getConnection();
+$auth = new Auth();
 $error = '';
 $success = false;
-$validToken = false;
-$user = null;
 
-$token = $_GET['token'] ?? '';
+$token = $_GET['token'] ?? $_POST['token'] ?? '';
+$user = $auth->findUserByToken($token);
+$isInvitation = $user && $user['status'] === 'invited';
 
-if (!empty($token)) {
-    $stmt = $db->prepare("SELECT * FROM users WHERE invitation_token = ? AND token_expires_at > NOW() AND status = 'invited'");
-    $stmt->execute([$token]);
-    $user = $stmt->fetch();
-    $validToken = $user !== false;
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $validToken) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $user) {
     $password = $_POST['password'] ?? '';
     $confirmPassword = $_POST['confirm_password'] ?? '';
 
-    if (empty($password)) {
+    if ($password === '') {
         $error = 'Password is required';
     } elseif (strlen($password) < 8) {
         $error = 'Password must be at least 8 characters';
     } elseif ($password !== $confirmPassword) {
         $error = 'Passwords do not match';
-    } else {
-        $hash = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $db->prepare("UPDATE users SET password_hash = ?, invitation_token = NULL, token_expires_at = NULL, status = 'active' WHERE id = ?");
-        $stmt->execute([$hash, $user['id']]);
+    } elseif ($auth->setPasswordWithToken($token, $password)) {
         $success = true;
+    } else {
+        $error = 'Could not set password. The link may have expired.';
     }
 }
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Set Your Password - <?php echo SITE_NAME; ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/css/style.css">
-    <link rel="stylesheet" href="assets/css/admin.css">
-</head>
-<body class="admin-body">
-    <div class="admin-login-container">
-        <div class="admin-login-box">
-            <div class="admin-login-header">
-                <a href="index.php" class="logo">
-                    <img src="assets/images/aribrain-logo.svg" alt="ARIbrain" width="40" height="40">
-                    <span><?php echo SITE_NAME; ?></span>
-                </a>
-                <?php if ($success): ?>
-                    <h1>You're all set!</h1>
-                <?php elseif ($validToken): ?>
-                    <h1>Set Your Password</h1>
-                <?php else: ?>
-                    <h1>Invalid Link</h1>
-                <?php endif; ?>
-            </div>
 
+if ($success) {
+    $authHeading = $isInvitation ? "You're all set!" : 'Password updated';
+} elseif ($user) {
+    $authHeading = $isInvitation ? 'Set Your Password' : 'Choose a New Password';
+} else {
+    $authHeading = 'Invalid Link';
+}
+$authTitle = $authHeading;
+require __DIR__ . '/../includes/auth-layout-start.php';
+?>
             <?php if ($error): ?>
                 <div class="admin-alert admin-alert-error"><?php echo htmlspecialchars($error); ?></div>
             <?php endif; ?>
@@ -75,11 +48,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $validToken) {
                 <div style="text-align: center; margin-top: 16px;">
                     <a href="index.php?page=user/login" class="btn btn-primary btn-block">Go to Login</a>
                 </div>
-            <?php elseif ($validToken): ?>
+            <?php elseif ($user): ?>
                 <p style="color: var(--color-text-muted); font-size: 0.9375rem; margin-bottom: 24px; text-align: center;">
-                    Welcome, <strong><?php echo htmlspecialchars($user['name']); ?></strong>! Choose a password to activate your account.
+                    <?php if ($isInvitation): ?>
+                        Welcome, <strong><?php echo htmlspecialchars($user['name']); ?></strong>! Choose a password to activate your account.
+                    <?php else: ?>
+                        Hi <strong><?php echo htmlspecialchars($user['name']); ?></strong>, choose a new password for your account.
+                    <?php endif; ?>
                 </p>
                 <form method="POST" class="admin-form">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="token" value="<?php echo htmlspecialchars($token); ?>">
                     <div class="admin-form-group">
                         <label for="password">Password</label>
                         <input type="password" id="password" name="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
@@ -92,14 +71,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $validToken) {
                 </form>
             <?php else: ?>
                 <p style="color: var(--color-text-muted); font-size: 0.9375rem; text-align: center;">
-                    This invitation link is invalid or has expired. Please contact your administrator for a new invitation.
+                    This link is invalid or has expired. You can request a new password reset link, or ask an administrator to resend your invitation.
                 </p>
+                <div style="text-align: center; margin-top: 16px;">
+                    <a href="index.php?page=forgot-password" class="btn btn-primary btn-block">Request a new reset link</a>
+                </div>
             <?php endif; ?>
-
-            <div class="admin-login-footer">
-                <a href="index.php">Back to website</a>
-            </div>
-        </div>
-    </div>
-</body>
-</html>
+<?php require __DIR__ . '/../includes/auth-layout-end.php';

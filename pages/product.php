@@ -1,6 +1,7 @@
 <?php
 $pageTitle = 'What is ARIbrain?';
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/sanitize.php';
 $db = Database::getInstance()->getConnection();
 $sections = $db->query("SELECT * FROM page_sections WHERE page_slug = 'product' AND is_active = 1 ORDER BY sort_order, id")->fetchAll();
 ?>
@@ -33,7 +34,7 @@ $sections = $db->query("SELECT * FROM page_sections WHERE page_slug = 'product' 
         <div class="content-block">
             <h2><?php echo htmlspecialchars($section['title']); ?></h2>
             <div class="content-body">
-                <?php echo $section['content']; ?>
+                <?php echo sanitize_html($section['content']); ?>
             </div>
         </div>
     </div>

@@ -666,3 +666,9 @@ a.admin-card {
     background: #f59e0b;
     color: white;
 }
+
+/* Tabs (Pages admin) */
+.admin-tabs { display: flex; gap: 4px; margin-bottom: 24px; background: var(--color-bg-alt); padding: 4px; border-radius: var(--radius-md); }
+.admin-tab { padding: 10px 20px; font-size: 0.9375rem; font-weight: 500; color: var(--color-text-muted); text-decoration: none; border-radius: var(--radius-sm); transition: all var(--transition); }
+.admin-tab:hover { color: var(--color-text); background: var(--color-bg); }
+.admin-tab.active { color: white; background: var(--color-primary); }

@@ -1,6 +1,7 @@
 <?php
 $pageTitle = 'News & Updates';
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/sanitize.php';
 $db = Database::getInstance()->getConnection();
 $posts = $db->query("SELECT * FROM news_posts WHERE is_published = 1 ORDER BY published_at DESC, created_at DESC")->fetchAll();
 ?>
@@ -49,7 +50,7 @@ $posts = $db->query("SELECT * FROM news_posts WHERE is_published = 1 ORDER BY pu
                 <?php if ($post['excerpt']): ?>
                     <p class="news-excerpt"><?php echo htmlspecialchars($post['excerpt']); ?></p>
                 <?php endif; ?>
-                <div class="news-body"><?php echo $post['content']; ?></div>
+                <div class="news-body"><?php echo sanitize_html($post['content']); ?></div>
             </article>
             <?php endforeach; ?>
         </div>

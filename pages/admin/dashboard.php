@@ -1,42 +1,15 @@
 <?php
-require_once __DIR__ . '/../../includes/admin/auth.php';
+require_once __DIR__ . '/../../includes/bootstrap.php';
 
-$auth = new AdminAuth();
-$auth->requireLogin();
+$auth = new Auth();
+$auth->requireAdminPanel();
 
-$currentAdmin = $auth->getCurrentAdmin();
+$currentUser = $auth->currentUser();
 
-if (isset($_GET['action']) && $_GET['action'] === 'logout') {
-    $auth->logout();
-    header('Location: index.php?page=admin/login');
-    exit;
-}
+$adminTitle = 'Dashboard';
+$activePage = 'dashboard';
+require __DIR__ . '/../../includes/admin/layout-start.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - <?php echo SITE_NAME; ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/css/style.css">
-    <link rel="stylesheet" href="assets/css/admin.css">
-</head>
-<body class="admin-body">
-    <div class="admin-layout">
-        <?php $activePage = 'dashboard'; require __DIR__ . '/../../includes/admin/sidebar.php'; ?>
-        
-        <main class="admin-main">
-            <header class="admin-header">
-                <h1>Dashboard</h1>
-                <div class="admin-user">
-                    <span>Welcome, <?php echo htmlspecialchars($currentAdmin['username']); ?></span>
-                </div>
-            </header>
-            
-            <div class="admin-content">
                 <div class="admin-cards">
                     <a href="index.php?page=admin/publications" class="admin-card">
                         <div class="admin-card-icon publications">
@@ -95,7 +68,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
                         </div>
                     </a>
 
-                    <?php if ($currentAdmin['role'] === 'admin'): ?>
+                    <?php if ($currentUser['role'] === 'admin'): ?>
                     <a href="index.php?page=admin/users" class="admin-card">
                         <div class="admin-card-icon users">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -124,8 +97,4 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
                         <li>Configure website settings</li>
                     </ul>
                 </div>
-            </div>
-        </main>
-    </div>
-</body>
-</html>
+            <?php require __DIR__ . '/../../includes/admin/layout-end.php'; ?>

@@ -1,6 +1,6 @@
 <?php
 // Usage: $activePage = 'dashboard' | 'publications' | 'news' | 'forum' | 'pages' | 'users'
-// Requires $currentAdmin from auth
+// Requires $currentUser from Auth::currentUser()
 $sidebarActivePage = $activePage ?? '';
 ?>
 <aside class="admin-sidebar">
@@ -50,7 +50,7 @@ $sidebarActivePage = $activePage ?? '';
             </svg>
             Forum
         </a>
-        <?php if (($currentAdmin['role'] ?? 'admin') === 'admin'): ?>
+        <?php if (($currentUser['role'] ?? '') === 'admin'): ?>
         <a href="index.php?page=admin/users" class="admin-nav-item <?php echo $sidebarActivePage === 'users' ? 'active' : ''; ?>">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -64,7 +64,7 @@ $sidebarActivePage = $activePage ?? '';
     </nav>
 
     <div class="admin-sidebar-footer">
-        <a href="index.php?page=admin/dashboard&action=logout" class="admin-nav-item">
+        <a href="index.php?page=logout" class="admin-nav-item">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                 <polyline points="16 17 21 12 16 7"></polyline>
