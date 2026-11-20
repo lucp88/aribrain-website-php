@@ -122,50 +122,7 @@ function timeAgo($datetime) {
 </head>
 <body class="admin-body">
     <div class="admin-layout">
-        <aside class="admin-sidebar">
-            <div class="admin-sidebar-header">
-                <a href="index.php" class="logo">
-                    <img src="assets/images/aribrain-logo.svg" alt="ARIbrain" width="32" height="32">
-                    <span><?php echo SITE_NAME; ?></span>
-                </a>
-            </div>
-            
-            <nav class="admin-nav">
-                <a href="index.php?page=admin/dashboard" class="admin-nav-item">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="3" y="3" width="7" height="7"></rect>
-                        <rect x="14" y="3" width="7" height="7"></rect>
-                        <rect x="14" y="14" width="7" height="7"></rect>
-                        <rect x="3" y="14" width="7" height="7"></rect>
-                    </svg>
-                    Dashboard
-                </a>
-                <a href="index.php?page=admin/publications" class="admin-nav-item">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                    </svg>
-                    Publications
-                </a>
-                <a href="index.php?page=admin/forum" class="admin-nav-item active">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                    </svg>
-                    Forum
-                </a>
-            </nav>
-            
-            <div class="admin-sidebar-footer">
-                <a href="index.php?page=admin/dashboard&action=logout" class="admin-nav-item">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                        <polyline points="16 17 21 12 16 7"></polyline>
-                        <line x1="21" y1="12" x2="9" y2="12"></line>
-                    </svg>
-                    Logout
-                </a>
-            </div>
-        </aside>
+        <?php $activePage = 'forum'; require __DIR__ . '/../../includes/admin/sidebar.php'; ?>
         
         <main class="admin-main">
             <header class="admin-header">

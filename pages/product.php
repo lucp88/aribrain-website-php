@@ -1,4 +1,9 @@
-<?php $pageTitle = 'What is ARIbrain?'; ?>
+<?php
+$pageTitle = 'What is ARIbrain?';
+require_once __DIR__ . '/../config/database.php';
+$db = Database::getInstance()->getConnection();
+$sections = $db->query("SELECT * FROM page_sections WHERE page_slug = 'product' AND is_active = 1 ORDER BY sort_order, id")->fetchAll();
+?>
 
 <div class="page-header">
     <div class="container">
@@ -7,6 +12,7 @@
     </div>
 </div>
 
+<?php if (empty($sections)): ?>
 <div class="container">
     <div class="placeholder-content">
         <div class="icon">
@@ -20,3 +26,17 @@
         <a href="<?php echo GITHUB_URL; ?>" class="btn btn-primary" target="_blank" rel="noopener">View README on GitHub</a>
     </div>
 </div>
+<?php else: ?>
+<?php foreach ($sections as $i => $section): ?>
+<section class="section <?php echo $i % 2 === 1 ? 'section-alt' : ''; ?>">
+    <div class="container">
+        <div class="content-block">
+            <h2><?php echo htmlspecialchars($section['title']); ?></h2>
+            <div class="content-body">
+                <?php echo $section['content']; ?>
+            </div>
+        </div>
+    </div>
+</section>
+<?php endforeach; ?>
+<?php endif; ?>

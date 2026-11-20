@@ -15,31 +15,46 @@ class AdminAuth {
         if (!$this->db) {
             return ['success' => false, 'error' => 'Database connection failed'];
         }
-        
+
+        // Check admins table first (always full admin)
         $stmt = $this->db->prepare("SELECT id, username, password_hash, is_active FROM admins WHERE username = ? OR email = ?");
         $stmt->execute([$username, $username]);
         $admin = $stmt->fetch();
-        
-        if (!$admin) {
-            return ['success' => false, 'error' => 'Invalid credentials'];
+
+        if ($admin) {
+            if (!$admin['is_active']) {
+                return ['success' => false, 'error' => 'Account is disabled'];
+            }
+            if (password_verify($password, $admin['password_hash'])) {
+                $this->db->prepare("UPDATE admins SET last_login = NOW() WHERE id = ?")->execute([$admin['id']]);
+                $_SESSION['admin_id'] = $admin['id'];
+                $_SESSION['admin_username'] = $admin['username'];
+                $_SESSION['admin_logged_in'] = true;
+                $_SESSION['admin_role'] = 'admin';
+                return ['success' => true];
+            }
         }
-        
-        if (!$admin['is_active']) {
-            return ['success' => false, 'error' => 'Account is disabled'];
+
+        // Check users table for admin or editor role users
+        $stmt = $this->db->prepare("SELECT id, name, email, role, password_hash, status FROM users WHERE email = ? AND role IN ('admin', 'editor')");
+        $stmt->execute([$username]);
+        $user = $stmt->fetch();
+
+        if ($user) {
+            if ($user['status'] !== 'active') {
+                return ['success' => false, 'error' => 'Account is not active'];
+            }
+            if (password_verify($password, $user['password_hash'])) {
+                $this->db->prepare("UPDATE users SET last_login = NOW() WHERE id = ?")->execute([$user['id']]);
+                $_SESSION['admin_id'] = $user['id'];
+                $_SESSION['admin_username'] = $user['name'];
+                $_SESSION['admin_logged_in'] = true;
+                $_SESSION['admin_role'] = $user['role'];
+                return ['success' => true];
+            }
         }
-        
-        if (!password_verify($password, $admin['password_hash'])) {
-            return ['success' => false, 'error' => 'Invalid credentials'];
-        }
-        
-        $stmt = $this->db->prepare("UPDATE admins SET last_login = NOW() WHERE id = ?");
-        $stmt->execute([$admin['id']]);
-        
-        $_SESSION['admin_id'] = $admin['id'];
-        $_SESSION['admin_username'] = $admin['username'];
-        $_SESSION['admin_logged_in'] = true;
-        
-        return ['success' => true];
+
+        return ['success' => false, 'error' => 'Invalid credentials'];
     }
     
     public function logout() {
@@ -93,8 +108,20 @@ class AdminAuth {
         }
         return [
             'id' => $_SESSION['admin_id'],
-            'username' => $_SESSION['admin_username']
+            'username' => $_SESSION['admin_username'],
+            'role' => $_SESSION['admin_role'] ?? 'admin'
         ];
+    }
+
+    public function isAdmin() {
+        return $this->isLoggedIn() && ($_SESSION['admin_role'] ?? 'admin') === 'admin';
+    }
+
+    public function requireAdmin() {
+        if (!$this->isAdmin()) {
+            header('Location: index.php?page=admin/dashboard');
+            exit;
+        }
     }
     
     public function adminExists() {
