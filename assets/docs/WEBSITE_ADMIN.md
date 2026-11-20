@@ -506,7 +506,9 @@ sed -i 's/utf8mb4_0900_ai_ci/utf8mb4_general_ci/g' your_dump.sql
 ```
 
 **Deploy fails at "Upload temporary migration runner" with a TLS/SSL error**
-Vimexx may present a certificate for its own server name instead of your domain. Set the `FTP_SERVER` secret to the hostname on the certificate (FileZilla shows it when you connect). Only if FTPS is not offered at all, set the `FTP_PROTOCOL` variable to `ftp`.
+Use the server name as `FTP_SERVER` (`web0170.zxcs.nl`; its certificate is `*.zxcs.nl`), not `ftp.aribrain.eu`.
+
+The Vimexx FTP service sends its certificate without the Sectigo intermediate certificates (`curl: (60) ... unable to get local issuer certificate`). The workflow supplies them from `.github/certs/ftp-intermediates.pem`, so verification stays on. If Vimexx switches certificate authority, the error returns: the failing step then prints the chain the FTP server presents; replace the file with the new intermediates (e.g. from `openssl s_client -connect web0170.zxcs.nl:2222 -showcerts`). Never switch to `FTP_PROTOCOL=ftp` to work around this.
 
 **Deploy fails at "List pending migrations" with 503 "DEPLOY_TOKEN is not configured" or 403**
 `DEPLOY_TOKEN` is missing from `config/config.php` on the server, or differs from the GitHub secret.

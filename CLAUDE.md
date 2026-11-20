@@ -133,6 +133,7 @@ GitHub Actions workflow `.github/workflows/deploy.yml`, started manually (Action
 Rules:
 - The repo is **public** and so are workflow logs: never print secrets, server paths or database contents. The runner returns only names/status; details go to a log next to the backups.
 - Pin third-party actions to a full commit SHA (with a `# vX.Y.Z` comment).
+- The Vimexx FTP server omits its intermediate certificates; `.github/certs/ftp-intermediates.pem` supplies them (`FTP_EXTRA_CA_CERTS` for curl, `NODE_EXTRA_CA_CERTS` for the FTP action). Never disable TLS verification.
 - Don't apply migrations by hand in production; the pipeline must record them.
 - `config/config.php` on the server holds DB credentials and `DEPLOY_TOKEN` (not in git). Never upload `setup-database.php`, `CLAUDE.md` or SQL dumps.
 
