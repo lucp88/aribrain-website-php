@@ -53,7 +53,7 @@ Deploys run from GitHub Actions (`.github/workflows/deploy.yml`) and upload over
 
 Rejecting at step 4 cancels the deploy; nothing changes.
 
-The upload never touches: `config/config.php`, uploaded team photos (`assets/images/team/`), `setup-database.php`, `sql/`, `deploy/`, `.github/`, `CLAUDE.md`, `*.sql`. Files that were on the server before the pipeline existed are never deleted by it (it only deletes files it uploaded itself, tracked in `.ftp-deploy-sync-state.json` on the server).
+The upload never touches: `config/config.php`, uploaded team photos (`assets/images/team/`), `setup-database.php`, `sql/`, `deploy/`, `.github/`, `CLAUDE.md`, `*.sql`. It only uploads files tracked in git, and it only deletes files it uploaded itself (tracked in `.aribrain-deploy-manifest`, stored next to `public_html`), so files that were already on the server are never deleted by it.
 
 ### One-time Setup
 
@@ -508,7 +508,7 @@ sed -i 's/utf8mb4_0900_ai_ci/utf8mb4_general_ci/g' your_dump.sql
 **Deploy fails at "Upload temporary migration runner" with a TLS/SSL error**
 Use the server name as `FTP_SERVER` (`web0170.zxcs.nl`; its certificate is `*.zxcs.nl`), not `ftp.aribrain.eu`.
 
-The Vimexx FTP service sends its certificate without the Sectigo intermediate certificates (`curl: (60) ... unable to get local issuer certificate`). The workflow supplies them from `.github/certs/ftp-intermediates.pem`, so verification stays on. If Vimexx switches certificate authority, the error returns: the failing step then prints the chain the FTP server presents; replace the file with the new intermediates (e.g. from `openssl s_client -connect web0170.zxcs.nl:2222 -showcerts`). Never switch to `FTP_PROTOCOL=ftp` to work around this.
+The Vimexx FTP service sends its certificate without the Sectigo intermediate certificates (`curl: (60) ... unable to get local issuer certificate`). The workflow supplies them from `.github/certs/ftp-intermediates.pem`, so verification stays on. (The code upload uses curl, not a Node-based FTP action: that client failed on the Vimexx FTPS data connection with `ECONNRESET`.) If Vimexx switches certificate authority, the error returns: the failing step then prints the chain the FTP server presents; replace the file with the new intermediates (e.g. from `openssl s_client -connect web0170.zxcs.nl:2222 -showcerts`). Never switch to `FTP_PROTOCOL=ftp` to work around this.
 
 **Deploy fails at "List pending migrations" with 503 "DEPLOY_TOKEN is not configured" or 403**
 `DEPLOY_TOKEN` is missing from `config/config.php` on the server, or differs from the GitHub secret.

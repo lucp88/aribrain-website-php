@@ -127,13 +127,14 @@ GitHub Actions workflow `.github/workflows/deploy.yml`, started manually (Action
 
 1. **Check migrations**: `.github/scripts/deploy.sh upload-runner` puts `deploy/migrate.php` + `sql/migrations/` in `<server-dir>/_deploy/`; the runner's `status` lists pending migrations
 2. **Migrate database** (only if pending): pauses for approval (environment `production`), then the runner sets `/.maintenance`, writes a backup next to the web root and runs pending migrations, recording them in `schema_migrations`
-3. **Deploy code**: `SamKirkland/FTP-Deploy-Action` syncs changed files (excludes `config/config.php`, `assets/images/team/`, `deploy/`, `sql/`, …), then `maintenance_off` + smoke test
+3. **Deploy code**: `deploy.sh sync-code` uploads changed tracked files over FTPS (curl) using a hash manifest stored next to the web root; it only deletes files it deployed itself. Exclusions live in `is_excluded()` in `deploy.sh`. Then `maintenance_off` + smoke test
 4. **Clean up**: always removes `_deploy/`
 
 Rules:
 - The repo is **public** and so are workflow logs: never print secrets, server paths or database contents. The runner returns only names/status; details go to a log next to the backups.
 - Pin third-party actions to a full commit SHA (with a `# vX.Y.Z` comment).
-- The Vimexx FTP server omits its intermediate certificates; `.github/certs/ftp-intermediates.pem` supplies them (`FTP_EXTRA_CA_CERTS` for curl, `NODE_EXTRA_CA_CERTS` for the FTP action). Never disable TLS verification.
+- Don't switch the code upload back to a Node-based FTP action: its client fails on the Vimexx FTPS data connection (ECONNRESET); curl works.
+- The Vimexx FTP server omits its intermediate certificates; `.github/certs/ftp-intermediates.pem` supplies them (`FTP_EXTRA_CA_CERTS`). Never disable TLS verification.
 - Don't apply migrations by hand in production; the pipeline must record them.
 - `config/config.php` on the server holds DB credentials and `DEPLOY_TOKEN` (not in git). Never upload `setup-database.php`, `CLAUDE.md` or SQL dumps.
 
