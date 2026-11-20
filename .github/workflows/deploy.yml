@@ -142,34 +142,18 @@ jobs:
         with:
           persist-credentials: false
 
+      # Own curl-based sync (see deploy.sh "Code sync"): the Node FTP client of
+      # SamKirkland/FTP-Deploy-Action fails on the Vimexx FTPS data connection
+      # (ECONNRESET), curl works. Exclusions are in is_excluded() in deploy.sh.
       - name: Upload changed files
-        uses: SamKirkland/FTP-Deploy-Action@3a9c65ae0fc12ac924ccef8afc26941cc43aad0b # v4.4.0
         env:
-          # Node adds these intermediates to its trusted certificates (verification stays strict).
-          NODE_EXTRA_CA_CERTS: ${{ github.workspace }}/.github/certs/ftp-intermediates.pem
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ${{ vars.FTP_PROTOCOL || 'ftps' }}
-          port: ${{ vars.FTP_PORT || '21' }}
-          server-dir: ${{ vars.FTP_SERVER_DIR }}
-          log-level: minimal
-          # Excluded paths are never uploaded AND never deleted on the server.
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/.DS_Store
-            .github/**
-            .claude/**
-            deploy/**
-            sql/**
-            *.sql
-            config/config.php
-            assets/images/team/**
-            setup-database.php
-            CLAUDE.md
-            .maintenance
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_SERVER_DIR: ${{ vars.FTP_SERVER_DIR }}
+          FTP_PROTOCOL: ${{ vars.FTP_PROTOCOL || 'ftps' }}
+          FTP_PORT: ${{ vars.FTP_PORT || '21' }}
+        run: .github/scripts/deploy.sh sync-code
 
       - name: End maintenance mode
         env:

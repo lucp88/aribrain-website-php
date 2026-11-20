@@ -4,6 +4,7 @@
 #   deploy.sh upload-runner     Upload deploy/migrate.php + sql/migrations/*.sql to <server-dir>/_deploy/
 #   deploy.sh remove-runner     Delete <server-dir>/_deploy/ again (and verify it is gone)
 #   deploy.sh runner <action>   POST <action> to the runner, print its JSON response
+#   deploy.sh sync-code         Upload new/changed site files, delete files removed from the repo
 #
 # Environment:
 #   FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, FTP_SERVER_DIR (e.g. domains/aribrain.eu/public_html/)
@@ -105,6 +106,103 @@ remove_runner() {
     echo "Runner removed."
 }
 
+# ---------------------------------------------------------------------------
+# Code sync
+#
+# Deploys the files tracked in git (minus the exclusions below). A manifest of
+# "sha256  path" lines is kept on the server NEXT TO the web root (not
+# downloadable). Only files whose hash changed are uploaded, and only files
+# listed in the previous manifest can be deleted, so files that exist only on
+# the server (config.php, uploaded team photos, ...) are never touched.
+# ---------------------------------------------------------------------------
+
+# Never uploaded, never deleted.
+is_excluded() {
+    case "$1" in
+        .github/*|.claude/*|deploy/*|sql/*|*.sql) return 0 ;;
+        config/config.php|setup-database.php|CLAUDE.md|.maintenance) return 0 ;;
+        assets/images/team/*) return 0 ;;
+        .git*|*/.git*|.DS_Store|*/.DS_Store) return 0 ;;
+    esac
+    return 1
+}
+
+sha256_of() {
+    if command -v sha256sum > /dev/null; then sha256sum "$1" | cut -d' ' -f1
+    else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+sync_code() {
+    ftp_setup
+    local web_dir="${FTP_SERVER_DIR%/}"          # e.g. public_html
+    local parent=""
+    [[ "$web_dir" == */* ]] && parent="${web_dir%/*}/"
+    local manifest_path="${parent}.aribrain-deploy-manifest"
+    [ "$web_dir" = "." ] && manifest_path=".aribrain-deploy-manifest"
+
+    local work
+    work="$(mktemp -d)"
+    local local_manifest="$work/local" remote_manifest="$work/remote"
+
+    # 1. Local manifest from tracked files
+    git ls-files -z | while IFS= read -r -d '' path; do
+        is_excluded "$path" && continue
+        [ -f "$path" ] || continue
+        printf '%s  %s\n' "$(sha256_of "$path")" "$path"
+    done | sort -k2 > "$local_manifest"
+    cut -c67- "$local_manifest" > "$work/local_paths"
+
+    # 2. Previous manifest from the server (missing on the first deploy)
+    if ! "${CURL[@]}" -o "$remote_manifest" "${BASE_URL}/${manifest_path}" 2> /dev/null; then
+        : > "$remote_manifest"
+        echo "No previous deploy manifest on the server: uploading all files."
+    fi
+
+    # 3. Work out what changed
+    local upload=() delete=() path
+    while IFS= read -r line; do
+        grep -qxF -- "$line" "$remote_manifest" || upload+=("${line:66}")
+    done < "$local_manifest"
+    while IFS= read -r line; do
+        path="${line:66}"
+        [ -n "$path" ] || continue
+        is_excluded "$path" && continue          # never delete excluded paths, whatever the manifest says
+        grep -qxF -- "$path" "$work/local_paths" || delete+=("$path")
+    done < "$remote_manifest"
+
+    echo "Files: $(wc -l < "$local_manifest" | tr -d ' ') tracked, ${#upload[@]} to upload, ${#delete[@]} to delete"
+
+    # 4. Upload in batches; curl reuses the control connection within one call
+    local args=() n=0 total=0
+    for path in ${upload[@]+"${upload[@]}"}; do
+        args+=(-T "$path" "${BASE_URL}/${web_dir}/${path}")
+        n=$((n + 1)); total=$((total + 1))
+        echo "  upload $path"
+        if [ "$n" -ge 25 ]; then
+            ftp_curl --ftp-create-dirs "${args[@]}"
+            args=(); n=0
+        fi
+    done
+    if [ "$n" -gt 0 ]; then
+        ftp_curl --ftp-create-dirs "${args[@]}"
+    fi
+
+    # 5. Delete files that were removed from the repo
+    if [ "${#delete[@]}" -gt 0 ]; then
+        local quote=()
+        for path in ${delete[@]+"${delete[@]}"}; do
+            echo "  delete $path"
+            quote+=(-Q "*DELE ${web_dir}/${path}")
+        done
+        ftp_curl "${quote[@]}" --list-only "${BASE_URL}/" > /dev/null
+    fi
+
+    # 6. Save the new manifest last, so an interrupted run retries next time
+    ftp_curl -T "$local_manifest" "${BASE_URL}/${manifest_path}"
+    rm -rf "$work"
+    echo "Sync complete: $total uploaded, ${#delete[@]} deleted."
+}
+
 call_runner() {
     : "${SITE_URL:?SITE_URL is not set}"
     : "${DEPLOY_TOKEN:?DEPLOY_TOKEN is not set}"
@@ -119,5 +217,6 @@ case "$cmd" in
     upload-runner) upload_runner ;;
     remove-runner) remove_runner ;;
     runner) call_runner "${2:?usage: deploy.sh runner <status|migrate|maintenance_off>}" ;;
-    *) echo "usage: deploy.sh upload-runner|remove-runner|runner <action>" >&2; exit 2 ;;
+    sync-code) sync_code ;;
+    *) echo "usage: deploy.sh upload-runner|remove-runner|runner <action>|sync-code" >&2; exit 2 ;;
 esac
