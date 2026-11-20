@@ -28,6 +28,10 @@ defaults:
   run:
     shell: bash   # explicit shell = "bash -eo pipefail"
 
+env:
+  # The Vimexx FTP server doesn't send its intermediate certificates; see the file for details.
+  FTP_EXTRA_CA_CERTS: .github/certs/ftp-intermediates.pem
+
 jobs:
   prepare:
     name: Check migrations
@@ -140,6 +144,9 @@ jobs:
 
       - name: Upload changed files
         uses: SamKirkland/FTP-Deploy-Action@3a9c65ae0fc12ac924ccef8afc26941cc43aad0b # v4.4.0
+        env:
+          # Node adds these intermediates to its trusted certificates (verification stays strict).
+          NODE_EXTRA_CA_CERTS: ${{ github.workspace }}/.github/certs/ftp-intermediates.pem
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
