@@ -1,11 +1,10 @@
 <?php
-require_once __DIR__ . '/../../includes/admin/auth.php';
-require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/bootstrap.php';
 
-$auth = new AdminAuth();
-$auth->requireLogin();
+$auth = new Auth();
+$auth->requireAdminPanel();
 
-$currentAdmin = $auth->getCurrentAdmin();
+$currentUser = $auth->currentUser();
 $db = Database::getInstance()->getConnection();
 
 $message = '';
@@ -39,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             if ($action === 'create') {
                 $stmt = $db->prepare("INSERT INTO publications (title, authors, pub_type, journal, year, pub_date, location, conference, presentation_type, description, topics, doi, url, github_url, video_url, is_featured, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                $stmt->execute([$title, $authors, $pub_type, $journal, $year, $pub_date ?: null, $location, $conference, $presentation_type, $description, $topics, $doi, $url, $github_url, $video_url, $is_featured, $currentAdmin['id']]);
+                $stmt->execute([$title, $authors, $pub_type, $journal, $year, $pub_date ?: null, $location, $conference, $presentation_type, $description, $topics, $doi, $url, $github_url, $video_url, $is_featured, $currentUser['id']]);
                 $message = 'Publication created successfully';
             } else {
                 $stmt = $db->prepare("UPDATE publications SET title=?, authors=?, pub_type=?, journal=?, year=?, pub_date=?, location=?, conference=?, presentation_type=?, description=?, topics=?, doi=?, url=?, github_url=?, video_url=?, is_featured=? WHERE id=?");
@@ -65,31 +64,11 @@ if (isset($_GET['edit'])) {
 
 $talks = $db->query("SELECT * FROM publications WHERE pub_type = 'talk' ORDER BY pub_date DESC, year DESC")->fetchAll();
 $papers = $db->query("SELECT * FROM publications WHERE pub_type = 'paper' ORDER BY year DESC")->fetchAll();
+
+$adminTitle = 'Publications';
+$activePage = 'publications';
+require __DIR__ . '/../../includes/admin/layout-start.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Publications - Admin - <?php echo SITE_NAME; ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/css/style.css">
-    <link rel="stylesheet" href="assets/css/admin.css">
-</head>
-<body class="admin-body">
-    <div class="admin-layout">
-        <?php $activePage = 'publications'; require __DIR__ . '/../../includes/admin/sidebar.php'; ?>
-        
-        <main class="admin-main">
-            <header class="admin-header">
-                <h1>Publications</h1>
-                <div class="admin-user">
-                    <span>Welcome, <?php echo htmlspecialchars($currentAdmin['username']); ?></span>
-                </div>
-            </header>
-            
-            <div class="admin-content">
                 <?php if ($message): ?>
                     <div class="admin-alert admin-alert-success"><?php echo htmlspecialchars($message); ?></div>
                 <?php endif; ?>
@@ -99,7 +78,7 @@ $papers = $db->query("SELECT * FROM publications WHERE pub_type = 'paper' ORDER 
                 
                 <div class="admin-section">
                     <h2><?php echo $editItem ? 'Edit' : 'Add New'; ?> Publication / Talk</h2>
-                    <form method="POST" class="admin-form-grid">
+                    <form method="POST" class="admin-form-grid"><?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="<?php echo $editItem ? 'update' : 'create'; ?>">
                         <?php if ($editItem): ?>
                             <input type="hidden" name="id" value="<?php echo $editItem['id']; ?>">
@@ -232,7 +211,7 @@ $papers = $db->query("SELECT * FROM publications WHERE pub_type = 'paper' ORDER 
                                     <td><?php echo $talk['is_featured'] ? 'Yes' : 'No'; ?></td>
                                     <td class="admin-table-actions">
                                         <a href="index.php?page=admin/publications&edit=<?php echo $talk['id']; ?>" class="btn btn-sm btn-outline">Edit</a>
-                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this talk?')">
+                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this talk?')"><?php echo csrf_field(); ?>
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="id" value="<?php echo $talk['id']; ?>">
                                             <button type="submit" class="btn btn-sm btn-danger">Delete</button>
@@ -269,7 +248,7 @@ $papers = $db->query("SELECT * FROM publications WHERE pub_type = 'paper' ORDER 
                                     <td><?php echo $paper['is_featured'] ? 'Yes' : 'No'; ?></td>
                                     <td class="admin-table-actions">
                                         <a href="index.php?page=admin/publications&edit=<?php echo $paper['id']; ?>" class="btn btn-sm btn-outline">Edit</a>
-                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this paper?')">
+                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this paper?')"><?php echo csrf_field(); ?>
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="id" value="<?php echo $paper['id']; ?>">
                                             <button type="submit" class="btn btn-sm btn-danger">Delete</button>
@@ -281,11 +260,7 @@ $papers = $db->query("SELECT * FROM publications WHERE pub_type = 'paper' ORDER 
                         </table>
                     <?php endif; ?>
                 </div>
-            </div>
-        </main>
-    </div>
-    
-    <script>
+            <script>
     function toggleFields() {
         const pubType = document.getElementById('pub_type').value;
         document.querySelectorAll('.talk-fields').forEach(el => el.style.display = pubType === 'talk' ? 'block' : 'none');
@@ -293,5 +268,4 @@ $papers = $db->query("SELECT * FROM publications WHERE pub_type = 'paper' ORDER 
     }
     toggleFields();
     </script>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin/layout-end.php'; ?>

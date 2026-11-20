@@ -1,12 +1,20 @@
-CREATE TABLE IF NOT EXISTS admins (
+-- All accounts. Roles: admin (everything), editor (admin panel content), viewer (site only).
+-- token_hash holds the SHA-256 of the current invitation or password-reset token.
+CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
+    role ENUM('admin', 'editor', 'viewer') DEFAULT 'viewer',
+    password_hash VARCHAR(255) NULL,
+    token_hash CHAR(64) NULL,
+    token_expires_at TIMESTAMP NULL,
+    status ENUM('invited', 'active', 'inactive') DEFAULT 'invited',
+    invited_by INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     last_login TIMESTAMP NULL,
-    is_active BOOLEAN DEFAULT TRUE
+    INDEX idx_users_token_hash (token_hash),
+    CONSTRAINT fk_users_invited_by FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS publications (
@@ -30,7 +38,7 @@ CREATE TABLE IF NOT EXISTS publications (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     created_by INT,
-    FOREIGN KEY (created_by) REFERENCES admins(id) ON DELETE SET NULL
+    CONSTRAINT fk_publications_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS forum_tags (
@@ -75,23 +83,7 @@ CREATE TABLE IF NOT EXISTS forum_replies (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (question_id) REFERENCES forum_questions(id) ON DELETE CASCADE,
-    FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE SET NULL
-);
-
-CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    role ENUM('admin', 'editor', 'viewer') DEFAULT 'viewer',
-    password_hash VARCHAR(255) NULL,
-    invitation_token VARCHAR(64) NULL,
-    token_expires_at TIMESTAMP NULL,
-    status ENUM('invited', 'active', 'inactive') DEFAULT 'invited',
-    invited_by INT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    last_login TIMESTAMP NULL,
-    FOREIGN KEY (invited_by) REFERENCES admins(id) ON DELETE SET NULL
+    CONSTRAINT fk_forum_replies_admin_id FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS page_sections (
@@ -104,7 +96,7 @@ CREATE TABLE IF NOT EXISTS page_sections (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     created_by INT NULL,
-    FOREIGN KEY (created_by) REFERENCES admins(id) ON DELETE SET NULL
+    CONSTRAINT fk_page_sections_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS team_members (
@@ -135,7 +127,7 @@ CREATE TABLE IF NOT EXISTS use_cases (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     created_by INT NULL,
-    FOREIGN KEY (created_by) REFERENCES admins(id) ON DELETE SET NULL
+    CONSTRAINT fk_use_cases_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS news_posts (
@@ -151,7 +143,7 @@ CREATE TABLE IF NOT EXISTS news_posts (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     created_by INT NULL,
-    FOREIGN KEY (created_by) REFERENCES admins(id) ON DELETE SET NULL
+    CONSTRAINT fk_news_posts_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
 INSERT IGNORE INTO forum_tags (name, slug, color) VALUES

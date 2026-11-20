@@ -1,47 +1,25 @@
 <?php
-require_once __DIR__ . '/../config/database.php';
+// Shown by index.php instead of public pages while the site is under construction.
+require_once __DIR__ . '/../includes/bootstrap.php';
 
+$auth = $auth ?? new Auth();
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $db = Database::getInstance()->getConnection();
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
 
-    if (empty($email) || empty($password)) {
+    if ($email === '' || $password === '') {
         $error = 'Please enter your email and password';
     } else {
-        // Try user login
-        $stmt = $db->prepare("SELECT id, name, email, role, password_hash, status FROM users WHERE email = ?");
-        $stmt->execute([$email]);
-        $user = $stmt->fetch();
-
-        if ($user && $user['status'] === 'active' && password_verify($password, $user['password_hash'])) {
-            $db->prepare("UPDATE users SET last_login = NOW() WHERE id = ?")->execute([$user['id']]);
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['user_name'] = $user['name'];
-            $_SESSION['user_email'] = $user['email'];
-            $_SESSION['user_role'] = $user['role'];
-            $_SESSION['user_logged_in'] = true;
-            header('Location: index.php');
+        $result = $auth->login($email, $password);
+        if ($result['success']) {
+            // Back to the page that was requested.
+            $requested = $page ?? 'home';
+            header('Location: index.php' . ($requested !== 'home' ? '?page=' . urlencode($requested) : ''));
             exit;
         }
-
-        // Try admin login
-        $stmt = $db->prepare("SELECT id, username, password_hash, is_active FROM admins WHERE email = ? OR username = ?");
-        $stmt->execute([$email, $email]);
-        $admin = $stmt->fetch();
-
-        if ($admin && $admin['is_active'] && password_verify($password, $admin['password_hash'])) {
-            $db->prepare("UPDATE admins SET last_login = NOW() WHERE id = ?")->execute([$admin['id']]);
-            $_SESSION['admin_id'] = $admin['id'];
-            $_SESSION['admin_username'] = $admin['username'];
-            $_SESSION['admin_logged_in'] = true;
-            header('Location: index.php');
-            exit;
-        }
-
-        $error = 'Invalid credentials';
+        $error = $result['error'];
     }
 }
 ?>
@@ -210,9 +188,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
 
             <form method="POST" class="gate-form">
+                <?php echo csrf_field(); ?>
                 <div style="display: flex; flex-direction: column; gap: 6px;">
-                    <label for="email">Email or Username</label>
-                    <input type="text" id="email" name="email" required autocomplete="username" placeholder="you@example.com">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com">
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 6px;">
                     <label for="password">Password</label>
@@ -222,6 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
 
             <div class="gate-footer">
+                <p><a href="index.php?page=forgot-password" style="color: #6b7280;">Forgot password?</a></p>
                 <p><?php echo SITE_NAME; ?> &middot; Leiden University</p>
             </div>
         </div>

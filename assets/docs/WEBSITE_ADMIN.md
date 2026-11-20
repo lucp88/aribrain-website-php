@@ -57,13 +57,14 @@ FTP credentials are available in the Vimexx control panel. Files are uploaded to
 1. Make changes locally
 2. Test with `php -S localhost:8000`
 3. Upload changed files via FileZilla
-4. If database schema changed: run the new SQL via phpMyAdmin
+4. If database schema changed: run the matching file from `sql/migrations/` via phpMyAdmin (see [Migrations](#migrations))
 
 ### Important: Do NOT Upload
 
 - `setup-database.php` (security risk)
 - `.git/` directory
 - `CLAUDE.md` (internal documentation)
+- Database dumps (`aribrain_dump.sql` etc.) — anything in `public_html` can be downloaded by anyone
 
 ### Exporting Local Data to Production
 
@@ -72,6 +73,8 @@ mysqldump -u admin_peek -p'yourpassword' -h 127.0.0.1 --set-gtid-purged=OFF --no
 ```
 
 Then import `aribrain_dump.sql` via phpMyAdmin on Vimexx. The `2>/dev/null` suppresses warnings that would otherwise corrupt the SQL file.
+
+Dumps contain real user data and password hashes. Root-level `*.sql` files are git-ignored; never upload them via FTP, and delete them once imported.
 
 ---
 
@@ -85,8 +88,7 @@ The site uses PDO with a singleton pattern (`config/database.php`). All queries 
 
 | Table | Purpose |
 |-------|---------|
-| `admins` | Original admin accounts (full access) |
-| `users` | Invited users with roles (admin/editor/viewer) |
+| `users` | All accounts, with roles (admin/editor/viewer) |
 | `publications` | Papers and talks displayed on the publications page |
 | `page_sections` | Content sections for the ARIbrain product page |
 | `use_cases` | Use case entries for the Use Cases page |
@@ -96,12 +98,24 @@ The site uses PDO with a singleton pattern (`config/database.php`). All queries 
 | `forum_replies` | Replies to forum questions |
 | `forum_tags` | Tags for categorizing forum questions |
 | `forum_question_tags` | Many-to-many link between questions and tags |
-| `forum_categories` | Forum categories (not yet active) |
-| `forum_posts` | Forum posts (legacy, not yet active) |
+
+`created_by` (content tables), `invited_by` (users) and `forum_replies.admin_id` all reference `users(id)`.
 
 ### Schema Updates
 
-**Always** update `sql/schema.sql` when making database changes. This file is the source of truth for production deployment.
+**Always** update `sql/schema.sql` when making database changes. This file is the source of truth for fresh installs.
+
+### Migrations
+
+Changes to an existing database go in `sql/migrations/NNN_description.sql`, numbered in order. To apply one in production:
+
+1. phpMyAdmin → **Export** → Quick → SQL (backup first; MySQL can't roll back table changes)
+2. phpMyAdmin → **Import** → choose the migration file
+3. Upload the matching code
+
+| Migration | What it does |
+|-----------|--------------|
+| `001_merge_admins_into_users.sql` | Moves all `admins` into `users` (role `admin`), re-points all references, hashes pending tokens. Keeps the old table as `admins_pre_merge_backup` — drop it once verified. Former admins log in with their **email** afterwards. |
 
 ### Compatibility Note
 
@@ -111,12 +125,11 @@ Vimexx runs an older MySQL version. Avoid using `utf8mb4_0900_ai_ci` collation �
 
 ## User & Permission System
 
-### Two Account Systems
+### Accounts
 
-The site has two account tables that work together:
+All accounts live in the `users` table and log in with their email address. The very first admin is created through the setup form on the admin login page, which only appears (and only works) while no admin exists. Everyone else is invited from the admin panel.
 
-1. **`admins` table** — Original admin accounts created via the setup form or directly in the database. Always have full admin privileges.
-2. **`users` table** — Invited accounts with role-based permissions, managed through the admin panel.
+Authentication is handled by the `Auth` class in `includes/auth.php`. The session stores only the user id; the account is re-read on every request, so deactivating a user or changing their role takes effect immediately.
 
 ### Roles & Permissions
 
@@ -133,7 +146,7 @@ The site has two account tables that work together:
 
 ### How Roles Work
 
-- **Admin** — Full access to everything including user management. Can be from either the `admins` table or `users` table with `role = 'admin'`.
+- **Admin** — Full access to everything including user management.
 - **Editor** — Can log into the admin panel and manage content (publications, news, pages, forum) but cannot see or access the Users section. Cannot invite new users.
 - **Viewer** — Can only view the website through the access gate. No admin panel access.
 
@@ -141,19 +154,27 @@ The site has two account tables that work together:
 
 1. An admin goes to **Admin Panel → Users**
 2. Fills in name, email, and role → clicks **Send Invitation**
-3. A unique invitation token is generated (valid for 7 days)
+3. A unique invitation token is generated (valid for 7 days). Only its SHA-256 hash is stored.
 4. An HTML email is sent with a "Set Your Password" button
-5. The invited user clicks the link and sets their password
+5. The invited user clicks the link and sets their password (`?page=set-password`)
 6. Account status changes from `invited` → `active`
 7. User can now log in through the gate or (if admin/editor) the admin panel
+
+### Password Reset Flow
+
+1. User clicks **Forgot password?** on any login page (`?page=forgot-password`)
+2. If an active account has that email, a reset link (valid for 1 hour) is emailed. The page shows the same message either way, so it doesn't reveal which emails exist.
+3. The link opens the same `set-password` page used for invitations
+4. Any earlier invitation/reset link for that user stops working
 
 ### Login URLs
 
 | URL | Who can log in |
 |-----|---------------|
-| `https://aribrain.eu/` (gate) | All active users and admins |
-| `https://aribrain.eu/index.php?page=admin/login` | Admins and editors only |
+| `https://aribrain.eu/` (gate) | All active users |
+| `https://aribrain.eu/index.php?page=admin/login` | Active admins and editors |
 | `https://aribrain.eu/index.php?page=user/login` | All active users |
+| `https://aribrain.eu/index.php?page=logout` | Logs out |
 
 ### Managing Users
 
@@ -162,6 +183,14 @@ From the admin panel Users page, admins can:
 - **Resend** invitation (generates new token, extends expiry)
 - **Activate/Deactivate** existing users
 - **Delete** users permanently
+
+Admins can't deactivate or delete their own account (prevents locking yourself out).
+
+### Security
+
+- **CSRF:** every POST must carry a `csrf_token`. `includes/bootstrap.php` rejects any POST without a valid one, so every form needs `<?php echo csrf_field(); ?>`.
+- **Sessions:** cookies are `HttpOnly`, `SameSite=Lax` and `Secure` on HTTPS; the session id is regenerated on login.
+- **CMS HTML:** content from news posts, product sections and use cases goes through `sanitize_html()` (`includes/sanitize.php`) when rendered. Normal formatting, links, images, tables, inline styles and YouTube/Vimeo iframes are kept; scripts, event handlers (`onclick` etc.), `javascript:` links, forms and other iframes are removed.
 
 ---
 
@@ -191,7 +220,7 @@ Blog-style posts displayed on the News page.
 | Title | Yes | Post headline |
 | Excerpt | No | Short summary shown on listing |
 | Content | Yes | Full post body, HTML supported |
-| Author | No | Defaults to current admin username |
+| Author | No | Defaults to your account name |
 | Publish Date | No | When the post was/will be published |
 | Published | No | Checkbox — only published posts appear on the website |
 | Featured | No | Checkbox — featured posts get visual emphasis |
@@ -287,11 +316,11 @@ Reply-To: contact@aribrain.org
 
 These are configured in:
 - `config/config.php` — `CONTACT_EMAIL` constant
-- `pages/admin/users.php` — `sendInvitationEmail()` function (From header)
+- `includes/mail.php` — `send_branded_email()` (shared template and From header), used by `send_invitation_email()` and `send_password_reset_email()`
 
 ### Invitation Email
 
-The invitation email is an HTML email with:
+The invitation email (the password reset email uses the same template) is an HTML email with:
 - ARIbrain branding (dark header with green accent)
 - Personalized greeting with the user's name
 - Role assignment displayed
@@ -324,15 +353,15 @@ The website is currently behind a login gate. All public pages redirect to a log
 
 ### Who Can Pass the Gate
 
-- Users from the `users` table with `status = 'active'`
-- Admins from the `admins` table with `is_active = 1`
+- Any user with `status = 'active'` (all roles)
 
 ### Pages NOT Behind the Gate
 
-These pages bypass the gate and are always accessible:
-- `index.php?page=admin/login` — Admin login
+These pages bypass the gate and are always accessible (the `$standalonePages` list in `index.php`):
+- `index.php?page=admin/login` and the other admin pages (they check access themselves)
 - `index.php?page=user/login` — User login
-- `index.php?page=set-password&token=...` — Password setup from invitation
+- `index.php?page=set-password&token=...` — Set password from invitation or reset link
+- `index.php?page=forgot-password` — Request a reset link
 
 ### Removing the Gate
 
@@ -340,13 +369,8 @@ When the site is ready to go public, remove the gate block in `index.php`:
 
 ```php
 // Remove or comment out this block:
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-$isAdmin = isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true;
-$isUser = isset($_SESSION['user_logged_in']) && $_SESSION['user_logged_in'] === true;
-if (!$isAdmin && !$isUser) {
-    require_once __DIR__ . '/pages/gate.php';
+if (!$auth->isLoggedIn()) {
+    require __DIR__ . '/pages/gate.php';
     exit;
 }
 ```
@@ -370,19 +394,33 @@ URL: `https://aribrain.eu/index.php?page=admin/login`
 | Forum | `?page=admin/forum` | Moderate questions, manage replies and tags | Admin, Editor |
 | Users | `?page=admin/users` | Invite and manage users | Admin only |
 
-### Shared Sidebar
+### Shared Layout
 
-The admin sidebar is defined in `includes/admin/sidebar.php` and included by all admin pages via:
+Admin pages share their `<head>`, sidebar and header through `includes/admin/layout-start.php` / `layout-end.php`:
 ```php
-<?php $activePage = 'dashboard'; require __DIR__ . '/../../includes/admin/sidebar.php'; ?>
+<?php
+require_once __DIR__ . '/../../includes/bootstrap.php';
+
+$auth = new Auth();
+$auth->requireAdminPanel();   // or requireAdmin() for admin-only pages
+$currentUser = $auth->currentUser();
+
+// ... handle POST ...
+
+$adminTitle = 'My Page';      // h1 and browser title
+$activePage = 'mypage';       // highlighted sidebar item
+require __DIR__ . '/../../includes/admin/layout-start.php';
+?>
+    <!-- page content; every <form method="POST"> needs <?php echo csrf_field(); ?> -->
+<?php require __DIR__ . '/../../includes/admin/layout-end.php'; ?>
 ```
 
-The `$activePage` variable controls which item is highlighted. The Users link is automatically hidden for editors.
+The sidebar (`includes/admin/sidebar.php`) hides the Users link for editors. Login and password pages share `includes/auth-layout-start.php` / `auth-layout-end.php` the same way.
 
 ### Adding a New Admin Page
 
-1. Create `pages/admin/newpage.php`
-2. Add `'admin/newpage'` to the `$adminPages` array in `index.php`
+1. Create `pages/admin/newpage.php` using the pattern above
+2. Add `'admin/newpage'` to the `$standalonePages` array in `index.php`
 3. Add the sidebar link in `includes/admin/sidebar.php`
 4. Optionally add a card to the dashboard
 
@@ -416,9 +454,18 @@ Only users with `role = 'admin'` or `role = 'editor'` can access the admin panel
 **Invitation link expired**
 Tokens expire after 7 days. An admin can click "Resend" on the Users page to generate a new token.
 
+**"Request rejected — your session has expired or the form was invalid"**
+The form's CSRF token didn't match, usually because the page was open for a long time or the session expired. Reload the page and submit again. If it happens on a form you just added, the form is missing `<?php echo csrf_field(); ?>`.
+
+**"Request rejected — the submitted data was too large"**
+An upload exceeded PHP's `post_max_size`. Use a smaller file (team photos are compressed in the browser before upload).
+
+**Old admin can't log in after migration 001**
+Admins now log in with their email address, not their old username.
+
 **Pages show "Content Coming Soon" even after adding content**
 Ensure the entries have the "Active" checkbox checked (for pages/use cases/team) or "Published" checked (for news).
 
 ---
 
-*Last updated: March 2026*
+*Last updated: November 2026*

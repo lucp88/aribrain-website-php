@@ -1,12 +1,11 @@
 <?php
-require_once __DIR__ . '/../../includes/admin/auth.php';
-require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/bootstrap.php';
+require_once __DIR__ . '/../../includes/mail.php';
 
-$auth = new AdminAuth();
-$auth->requireLogin();
+$auth = new Auth();
 $auth->requireAdmin();
 
-$currentAdmin = $auth->getCurrentAdmin();
+$currentUser = $auth->currentUser();
 $db = Database::getInstance()->getConnection();
 
 $message = '';
@@ -14,8 +13,11 @@ $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
+    $userId = intval($_POST['id'] ?? 0);
 
-    if ($action === 'create') {
+    if (in_array($action, ['toggle_status', 'delete'], true) && $userId === (int)$currentUser['id']) {
+        $error = 'You cannot deactivate or delete your own account';
+    } elseif ($action === 'create') {
         $name = trim($_POST['name'] ?? '');
         $email = trim($_POST['email'] ?? '');
         $role = $_POST['role'] ?? 'viewer';
@@ -24,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Name and email are required';
         } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = 'Invalid email address';
-        } elseif (!in_array($role, ['admin', 'editor', 'viewer'])) {
+        } elseif (!in_array($role, ['admin', 'editor', 'viewer'], true)) {
             $error = 'Invalid role';
         } else {
             $stmt = $db->prepare("SELECT id FROM users WHERE email = ?");
@@ -32,14 +34,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($stmt->fetch()) {
                 $error = 'A user with this email already exists';
             } else {
-                $token = bin2hex(random_bytes(32));
-                $expiresAt = date('Y-m-d H:i:s', strtotime('+7 days'));
+                $stmt = $db->prepare("INSERT INTO users (name, email, role, status, invited_by) VALUES (?, ?, ?, 'invited', ?)");
+                $stmt->execute([$name, $email, $role, $currentUser['id']]);
+                $token = $auth->issueToken($db->lastInsertId(), Auth::INVITATION_TTL);
 
-                $stmt = $db->prepare("INSERT INTO users (name, email, role, invitation_token, token_expires_at, status, invited_by) VALUES (?, ?, ?, ?, ?, 'invited', ?)");
-                $stmt->execute([$name, $email, $role, $token, $expiresAt, $currentAdmin['id']]);
-
-                $sent = sendInvitationEmail($name, $email, $role, $token);
-                if ($sent) {
+                if (send_invitation_email($name, $email, $role, $token)) {
                     $message = "Invitation sent to {$email}";
                 } else {
                     $message = "User created but email could not be sent. You can resend the invitation.";
@@ -47,25 +46,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } elseif ($action === 'resend') {
-        $userId = intval($_POST['id'] ?? 0);
         $stmt = $db->prepare("SELECT * FROM users WHERE id = ? AND status = 'invited'");
         $stmt->execute([$userId]);
         $user = $stmt->fetch();
 
         if ($user) {
-            $token = bin2hex(random_bytes(32));
-            $expiresAt = date('Y-m-d H:i:s', strtotime('+7 days'));
-            $stmt = $db->prepare("UPDATE users SET invitation_token = ?, token_expires_at = ? WHERE id = ?");
-            $stmt->execute([$token, $expiresAt, $userId]);
-
-            $sent = sendInvitationEmail($user['name'], $user['email'], $user['role'], $token);
+            $token = $auth->issueToken($user['id'], Auth::INVITATION_TTL);
+            $sent = send_invitation_email($user['name'], $user['email'], $user['role'], $token);
             $message = $sent ? "Invitation resent to {$user['email']}" : "Could not send email. Please try again.";
         } else {
             $error = 'User not found or already active';
         }
     } elseif ($action === 'toggle_status') {
-        $userId = intval($_POST['id'] ?? 0);
-        $stmt = $db->prepare("SELECT status FROM users WHERE id = ?");
+        $stmt = $db->prepare("SELECT status FROM users WHERE id = ? AND status IN ('active', 'inactive')");
         $stmt->execute([$userId]);
         $user = $stmt->fetch();
 
@@ -76,114 +69,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = "User status updated to {$newStatus}";
         }
     } elseif ($action === 'delete') {
-        $userId = intval($_POST['id'] ?? 0);
         $stmt = $db->prepare("DELETE FROM users WHERE id = ?");
         $stmt->execute([$userId]);
         $message = 'User deleted';
     }
 }
 
-$users = $db->query("SELECT users.*, admins.username AS invited_by_name FROM users LEFT JOIN admins ON users.invited_by = admins.id ORDER BY users.created_at DESC")->fetchAll();
+$users = $db->query("SELECT u.*, inviter.name AS invited_by_name FROM users u LEFT JOIN users inviter ON u.invited_by = inviter.id ORDER BY u.created_at DESC")->fetchAll();
 
-function sendInvitationEmail($name, $email, $role, $token) {
-    $setupUrl = SITE_URL . '/index.php?page=set-password&token=' . $token;
-    $roleName = ucfirst($role);
-
-    $subject = "You're invited to join " . SITE_NAME;
-
-    $html = '<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin: 0; padding: 0; background-color: #f4f7f6; font-family: \'Helvetica Neue\', Arial, sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f7f6; padding: 40px 20px;">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08);">
-
-<!-- Header -->
-<tr>
-<td style="background: linear-gradient(135deg, #2d3436 0%, #1a1a2e 100%); padding: 40px 48px; text-align: center;">
-    <h1 style="margin: 0; color: #6bcf8e; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">' . SITE_NAME . '</h1>
-    <p style="margin: 8px 0 0; color: rgba(255,255,255,0.7); font-size: 14px;">All-Resolutions Inference for fMRI</p>
-</td>
-</tr>
-
-<!-- Body -->
-<tr>
-<td style="padding: 48px;">
-    <h2 style="margin: 0 0 8px; color: #1a1a2e; font-size: 22px; font-weight: 600;">Welcome aboard, ' . htmlspecialchars($name) . '!</h2>
-    <p style="margin: 0 0 24px; color: #6b7280; font-size: 15px; line-height: 1.6;">
-        You\'ve been invited to join <strong>' . SITE_NAME . '</strong> as <strong style="color: #6bcf8e;">' . $roleName . '</strong>. Set up your password to get started.
-    </p>
-
-    <!-- Button -->
-    <table width="100%" cellpadding="0" cellspacing="0">
-    <tr><td align="center" style="padding: 8px 0 32px;">
-        <a href="' . htmlspecialchars($setupUrl) . '" style="display: inline-block; background: #6bcf8e; color: #1a1a2e; text-decoration: none; font-weight: 600; font-size: 16px; padding: 14px 40px; border-radius: 8px;">
-            Set Your Password
-        </a>
-    </td></tr>
-    </table>
-
-    <p style="margin: 0 0 16px; color: #6b7280; font-size: 14px; line-height: 1.6;">
-        This invitation link will expire in <strong>7 days</strong>. If you didn\'t expect this email, you can safely ignore it.
-    </p>
-
-    <!-- Link fallback -->
-    <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin-top: 16px;">
-        <p style="margin: 0 0 8px; color: #9ca3af; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Or copy this link:</p>
-        <p style="margin: 0; color: #6b7280; font-size: 13px; word-break: break-all;">' . htmlspecialchars($setupUrl) . '</p>
-    </div>
-</td>
-</tr>
-
-<!-- Footer -->
-<tr>
-<td style="background: #f9fafb; padding: 24px 48px; border-top: 1px solid #e5e7eb; text-align: center;">
-    <p style="margin: 0; color: #9ca3af; font-size: 13px;">&copy; ' . date('Y') . ' ' . SITE_NAME . ' &middot; Leiden University</p>
-</td>
-</tr>
-
-</table>
-</td></tr>
-</table>
-</body>
-</html>';
-
-    $headers = "From: " . SITE_NAME . " <noreply@aribrain.eu>\r\n";
-    $headers .= "Reply-To: " . CONTACT_EMAIL . "\r\n";
-    $headers .= "MIME-Version: 1.0\r\n";
-    $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
-
-    return mail($email, $subject, $html, $headers);
-}
+$adminTitle = 'Users';
+$activePage = 'users';
+require __DIR__ . '/../../includes/admin/layout-start.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Users - Admin - <?php echo SITE_NAME; ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/css/style.css">
-    <link rel="stylesheet" href="assets/css/admin.css">
-</head>
-<body class="admin-body">
-    <div class="admin-layout">
-        <?php $activePage = 'users'; require __DIR__ . '/../../includes/admin/sidebar.php'; ?>
-
-        <main class="admin-main">
-            <header class="admin-header">
-                <h1>Users</h1>
-                <div class="admin-user">
-                    <span>Welcome, <?php echo htmlspecialchars($currentAdmin['username']); ?></span>
-                </div>
-            </header>
-
-            <div class="admin-content">
                 <?php if ($message): ?>
                     <div class="admin-alert admin-alert-success"><?php echo htmlspecialchars($message); ?></div>
                 <?php endif; ?>
@@ -193,7 +90,7 @@ function sendInvitationEmail($name, $email, $role, $token) {
 
                 <div class="admin-section">
                     <h2>Invite New User</h2>
-                    <form method="POST" class="admin-form-grid">
+                    <form method="POST" class="admin-form-grid"><?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="create">
 
                         <div class="admin-form-row">
@@ -263,26 +160,30 @@ function sendInvitationEmail($name, $email, $role, $token) {
                                     <td><?php echo date('M j, Y', strtotime($user['created_at'])); ?></td>
                                     <td class="admin-table-actions">
                                         <?php if ($user['status'] === 'invited'): ?>
-                                            <form method="POST" style="display:inline">
+                                            <form method="POST" style="display:inline"><?php echo csrf_field(); ?>
                                                 <input type="hidden" name="action" value="resend">
                                                 <input type="hidden" name="id" value="<?php echo $user['id']; ?>">
                                                 <button type="submit" class="btn btn-sm btn-outline">Resend</button>
                                             </form>
                                         <?php endif; ?>
-                                        <?php if ($user['status'] !== 'invited'): ?>
-                                            <form method="POST" style="display:inline">
-                                                <input type="hidden" name="action" value="toggle_status">
+                                        <?php if ((int)$user['id'] === (int)$currentUser['id']): ?>
+                                            <span class="admin-badge">You</span>
+                                        <?php else: ?>
+                                            <?php if ($user['status'] !== 'invited'): ?>
+                                                <form method="POST" style="display:inline"><?php echo csrf_field(); ?>
+                                                    <input type="hidden" name="action" value="toggle_status">
+                                                    <input type="hidden" name="id" value="<?php echo $user['id']; ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline">
+                                                        <?php echo $user['status'] === 'active' ? 'Deactivate' : 'Activate'; ?>
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
+                                            <form method="POST" style="display:inline" onsubmit="return confirm('Delete this user?')"><?php echo csrf_field(); ?>
+                                                <input type="hidden" name="action" value="delete">
                                                 <input type="hidden" name="id" value="<?php echo $user['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline">
-                                                    <?php echo $user['status'] === 'active' ? 'Deactivate' : 'Activate'; ?>
-                                                </button>
+                                                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                                             </form>
                                         <?php endif; ?>
-                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this user?')">
-                                            <input type="hidden" name="action" value="delete">
-                                            <input type="hidden" name="id" value="<?php echo $user['id']; ?>">
-                                            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-                                        </form>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
@@ -290,8 +191,4 @@ function sendInvitationEmail($name, $email, $role, $token) {
                         </table>
                     <?php endif; ?>
                 </div>
-            </div>
-        </main>
-    </div>
-</body>
-</html>
+            <?php require __DIR__ . '/../../includes/admin/layout-end.php'; ?>

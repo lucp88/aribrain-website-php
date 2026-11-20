@@ -1,6 +1,7 @@
 <?php
 $pageTitle = 'Use Cases & Demonstrations';
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/sanitize.php';
 $db = Database::getInstance()->getConnection();
 $useCases = $db->query("SELECT * FROM use_cases WHERE is_active = 1 ORDER BY sort_order, id")->fetchAll();
 ?>
@@ -47,7 +48,7 @@ $useCases = $db->query("SELECT * FROM use_cases WHERE is_active = 1 ORDER BY sor
                         <p class="use-case-summary"><?php echo htmlspecialchars($uc['summary']); ?></p>
                     <?php endif; ?>
                     <?php if ($uc['content']): ?>
-                        <div class="use-case-body"><?php echo $uc['content']; ?></div>
+                        <div class="use-case-body"><?php echo sanitize_html($uc['content']); ?></div>
                     <?php endif; ?>
                 </div>
             </div>

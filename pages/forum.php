@@ -1,6 +1,6 @@
 <?php 
 $pageTitle = 'Community Forum';
-require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/bootstrap.php';
 
 $db = Database::getInstance()->getConnection();
 $message = '';
@@ -85,7 +85,7 @@ if ($db) {
         
         if ($selectedQuestion) {
             $db->prepare("UPDATE forum_questions SET views = views + 1 WHERE id = ?")->execute([$qId]);
-            $stmt = $db->prepare("SELECT r.*, a.username as admin_username FROM forum_replies r LEFT JOIN admins a ON r.admin_id = a.id WHERE r.question_id = ? AND r.is_approved = 1 ORDER BY r.created_at ASC");
+            $stmt = $db->prepare("SELECT r.*, COALESCE(u.name, r.author_name) AS admin_username FROM forum_replies r LEFT JOIN users u ON r.admin_id = u.id WHERE r.question_id = ? AND r.is_approved = 1 ORDER BY r.created_at ASC");
             $stmt->execute([$qId]);
             $replies = $stmt->fetchAll();
         }
@@ -186,7 +186,7 @@ function renderQuestionTags($tagIds, $tagNames, $tagColors, $asLinks = true) {
             
             <footer class="forum-question-footer">
                 <div class="forum-author">
-                    <div class="forum-avatar"><?php echo strtoupper(substr($selectedQuestion['author_name'], 0, 1)); ?></div>
+                    <div class="forum-avatar"><?php echo htmlspecialchars(mb_strtoupper(mb_substr($selectedQuestion['author_name'], 0, 1))); ?></div>
                     <div class="forum-author-info">
                         <span class="forum-author-name"><?php echo htmlspecialchars($selectedQuestion['author_name']); ?></span>
                         <span class="forum-timestamp">Asked <?php echo timeAgo($selectedQuestion['created_at']); ?></span>
@@ -212,7 +212,7 @@ function renderQuestionTags($tagIds, $tagNames, $tagColors, $asLinks = true) {
                     <footer class="forum-reply-footer">
                         <div class="forum-author">
                             <div class="forum-avatar <?php echo $reply['is_admin_reply'] ? 'forum-avatar-admin' : ''; ?>">
-                                <?php echo strtoupper(substr($reply['is_admin_reply'] ? $reply['admin_username'] : $reply['author_name'], 0, 1)); ?>
+                                <?php echo htmlspecialchars(mb_strtoupper(mb_substr($reply['is_admin_reply'] ? $reply['admin_username'] : $reply['author_name'], 0, 1))); ?>
                             </div>
                             <div class="forum-author-info">
                                 <span class="forum-author-name">
@@ -231,7 +231,7 @@ function renderQuestionTags($tagIds, $tagNames, $tagColors, $asLinks = true) {
             
             <div class="forum-reply-form">
                 <h4>Post a Reply</h4>
-                <form method="POST">
+                <form method="POST"><?php echo csrf_field(); ?>
                     <input type="hidden" name="action" value="reply">
                     <input type="hidden" name="question_id" value="<?php echo $selectedQuestion['id']; ?>">
                     
@@ -359,7 +359,7 @@ function renderQuestionTags($tagIds, $tagNames, $tagColors, $asLinks = true) {
             </button>
         </div>
         
-        <form method="POST" class="forum-modal-form">
+        <form method="POST" class="forum-modal-form"><?php echo csrf_field(); ?>
             <input type="hidden" name="action" value="create_question">
             
             <div class="forum-form-group">

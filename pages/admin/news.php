@@ -1,11 +1,10 @@
 <?php
-require_once __DIR__ . '/../../includes/admin/auth.php';
-require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/bootstrap.php';
 
-$auth = new AdminAuth();
-$auth->requireLogin();
+$auth = new Auth();
+$auth->requireAdminPanel();
 
-$currentAdmin = $auth->getCurrentAdmin();
+$currentUser = $auth->currentUser();
 $db = Database::getInstance()->getConnection();
 
 $message = '';
@@ -43,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $stmt = $db->prepare("INSERT INTO news_posts (title, slug, content, excerpt, author_name, is_published, is_featured, published_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                $stmt->execute([$title, $slug, $content, $excerpt, $author_name, $is_published, $is_featured, $published_at ?: null, $currentAdmin['id']]);
+                $stmt->execute([$title, $slug, $content, $excerpt, $author_name, $is_published, $is_featured, $published_at ?: null, $currentUser['id']]);
                 $message = 'News post created';
             } else {
                 $stmt = $db->prepare("UPDATE news_posts SET title=?, content=?, excerpt=?, author_name=?, is_published=?, is_featured=?, published_at=? WHERE id=?");
@@ -67,31 +66,11 @@ if (isset($_GET['edit'])) {
 }
 
 $posts = $db->query("SELECT * FROM news_posts ORDER BY published_at DESC, created_at DESC")->fetchAll();
+
+$adminTitle = 'News';
+$activePage = 'news';
+require __DIR__ . '/../../includes/admin/layout-start.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>News - Admin - <?php echo SITE_NAME; ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/css/style.css">
-    <link rel="stylesheet" href="assets/css/admin.css">
-</head>
-<body class="admin-body">
-    <div class="admin-layout">
-        <?php $activePage = 'news'; require __DIR__ . '/../../includes/admin/sidebar.php'; ?>
-
-        <main class="admin-main">
-            <header class="admin-header">
-                <h1>News</h1>
-                <div class="admin-user">
-                    <span>Welcome, <?php echo htmlspecialchars($currentAdmin['username']); ?></span>
-                </div>
-            </header>
-
-            <div class="admin-content">
                 <?php if ($message): ?>
                     <div class="admin-alert admin-alert-success"><?php echo htmlspecialchars($message); ?></div>
                 <?php endif; ?>
@@ -101,7 +80,7 @@ $posts = $db->query("SELECT * FROM news_posts ORDER BY published_at DESC, create
 
                 <div class="admin-section">
                     <h2><?php echo $editItem ? 'Edit' : 'Add New'; ?> Post</h2>
-                    <form method="POST" class="admin-form-grid">
+                    <form method="POST" class="admin-form-grid"><?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="<?php echo $editItem ? 'update' : 'create'; ?>">
                         <?php if ($editItem): ?>
                             <input type="hidden" name="id" value="<?php echo $editItem['id']; ?>">
@@ -125,11 +104,11 @@ $posts = $db->query("SELECT * FROM news_posts ORDER BY published_at DESC, create
                         <div class="admin-form-row">
                             <div class="admin-form-group">
                                 <label for="author_name">Author</label>
-                                <input type="text" id="author_name" name="author_name" value="<?php echo htmlspecialchars($editItem['author_name'] ?? $currentAdmin['username']); ?>">
+                                <input type="text" id="author_name" name="author_name" value="<?php echo htmlspecialchars($editItem['author_name'] ?? $currentUser['name']); ?>">
                             </div>
                             <div class="admin-form-group">
                                 <label for="published_at">Publish Date</label>
-                                <input type="date" id="published_at" name="published_at" value="<?php echo $editItem['published_at'] ? date('Y-m-d', strtotime($editItem['published_at'])) : date('Y-m-d'); ?>">
+                                <input type="date" id="published_at" name="published_at" value="<?php echo !empty($editItem['published_at']) ? date('Y-m-d', strtotime($editItem['published_at'])) : date('Y-m-d'); ?>">
                             </div>
                         </div>
 
@@ -190,7 +169,7 @@ $posts = $db->query("SELECT * FROM news_posts ORDER BY published_at DESC, create
                                     </td>
                                     <td class="admin-table-actions">
                                         <a href="index.php?page=admin/news&edit=<?php echo $post['id']; ?>" class="btn btn-sm btn-outline">Edit</a>
-                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this post?')">
+                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this post?')"><?php echo csrf_field(); ?>
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="id" value="<?php echo $post['id']; ?>">
                                             <button type="submit" class="btn btn-sm btn-danger">Delete</button>
@@ -202,8 +181,4 @@ $posts = $db->query("SELECT * FROM news_posts ORDER BY published_at DESC, create
                         </table>
                     <?php endif; ?>
                 </div>
-            </div>
-        </main>
-    </div>
-</body>
-</html>
+            <?php require __DIR__ . '/../../includes/admin/layout-end.php'; ?>

@@ -16,3 +16,8 @@ setup-database.php
 
 # Logs
 *.log
+
+# Database dumps (contain real user data and password hashes)
+/*.sql
+*.dump.sql
+*_dump.sql

@@ -1,86 +1,109 @@
 # ARIbrain Website
 
-PHP website for the ARIbrain neuroimaging desktop application (PyQt). Hosted on Vimexx.
+PHP website for the ARIbrain neuroimaging desktop application (PyQt). Hosted on Vimexx (shared hosting, FTP deploy). Plain PHP, no framework, no Composer.
+
+Full admin/deployment guide: `assets/docs/WEBSITE_ADMIN.md` (keep it in sync with changes here).
 
 ## Project Structure
 
 ```
-├── index.php           # Main entry point, handles routing via ?page= parameter
+├── index.php                 # Router (?page=), gate, logout
 ├── config/
-│   ├── config.php      # Site settings, nav items, DB credentials
-│   └── database.php    # PDO database connection class
+│   ├── config.php            # Site settings, nav items, DB credentials (git-ignored)
+│   ├── config.example.php    # Template for config.php
+│   └── database.php          # PDO singleton
 ├── includes/
-│   ├── header.php      # HTML head, navigation, mobile menu
-│   ├── footer.php      # Footer links, scripts
+│   ├── bootstrap.php         # Session + CSRF enforcement + Auth. Every page that uses DB/session requires this
+│   ├── security.php          # start_secure_session(), csrf_token/field/verify/enforce()
+│   ├── auth.php              # Auth class (login, roles, tokens) — single `users` table
+│   ├── mail.php              # send_branded_email(), send_invitation_email(), send_password_reset_email()
+│   ├── sanitize.php          # sanitize_html() for CMS HTML output
+│   ├── auth-layout-start.php / auth-layout-end.php   # Shared layout for login/password pages
+│   ├── header.php / footer.php                       # Public site layout
 │   └── admin/
-│       └── auth.php    # Admin authentication class
+│       ├── layout-start.php / layout-end.php         # Shared admin layout (head, sidebar, header)
+│       └── sidebar.php
 ├── pages/
-│   ├── home.php        # Homepage with hero, features, CTA
-│   ├── product.php     # ARIbrain app info
-│   ├── use-cases.php   # Use cases
-│   ├── install.php     # Installation guide
-│   ├── docs.php        # Documentation
-│   ├── publications.php # Scientific publications & talks (loads from DB)
-│   ├── about.php       # Team info
-│   ├── blog.php        # News/updates
-│   ├── forum.php       # Community forum
+│   ├── gate.php              # "Under construction" login shown to logged-out visitors
+│   ├── set-password.php      # Invitation AND password-reset links land here
+│   ├── forgot-password.php
+│   ├── user/login.php
+│   ├── home, product, use-cases, install, docs, publications, about, blog, forum (.php)
 │   └── admin/
-│       ├── login.php      # Admin login + first-time setup
-│       ├── dashboard.php  # Admin dashboard
-│       └── publications.php # Manage publications & talks
+│       ├── login.php         # Admin login + first-time setup (only while no admin exists)
+│       ├── dashboard.php, publications.php, news.php, pages.php, forum.php
+│       └── users.php         # Admin only: invite/resend/activate/delete users
 ├── sql/
-│   └── schema.sql      # Database schema (KEEP UPDATED!)
-├── setup-database.php  # One-time DB setup script (delete after use)
+│   ├── schema.sql            # Full schema for fresh installs (KEEP UPDATED)
+│   └── migrations/           # NNN_description.sql for existing databases
+├── setup-database.php        # One-time DB setup (git-ignored; delete after use)
 └── assets/
-    ├── css/
-    │   ├── style.css   # Main styles
-    │   └── admin.css   # Admin panel styles
-    ├── js/main.js      # Mobile menu, scroll effects
-    └── images/         # Logo files, UI screenshot
+    ├── css/style.css, admin.css
+    ├── js/main.js
+    ├── docs/USER_GUIDE.md, WEBSITE_ADMIN.md
+    └── images/ (team/ = uploaded team photos)
 ```
+
+## Routing
+
+- Public: `index.php?page=pagename` → header + `pages/pagename.php` + footer. Must be in `$validPages`.
+- Standalone (own layout, bypass the gate): admin pages, `user/login`, `set-password`, `forgot-password`. Listed in `$standalonePages` in `index.php`.
+- `index.php?page=logout` logs out.
+- Gate: while the site is under construction, logged-out visitors get `pages/gate.php` for every public page. Remove the `if (!$auth->isLoggedIn())` block in `index.php` to go public.
+
+## Accounts & Auth
+
+- One table: `users`, roles `admin` (everything) / `editor` (admin panel content, no user management) / `viewer` (site only). Login is by **email**.
+- `Auth` (`includes/auth.php`): session stores only `user_id`; `currentUser()` reloads the row each request, so deactivation/role changes apply immediately.
+  - Admin pages: `$auth->requireAdminPanel()` (admin + editor) or `$auth->requireAdmin()` (admin only), then `$currentUser = $auth->currentUser()` (`id`, `name`, `email`, `role`).
+- Invitation and reset tokens: `issueToken($userId, Auth::INVITATION_TTL | Auth::RESET_TTL)` returns the plain token for the email; only its SHA-256 is stored in `users.token_hash`. Expiry is computed in MySQL (`NOW() + INTERVAL`), not PHP, to avoid timezone drift.
+- Content attribution columns (`created_by`, `invited_by`, `forum_replies.admin_id`) all reference `users(id)`.
+
+## Security Rules
+
+- **CSRF:** every `<form method="POST">` must include `<?php echo csrf_field(); ?>`. `bootstrap.php` rejects POSTs without a valid token (also when a page file is requested directly).
+- **Output:** escape with `htmlspecialchars()`. CMS fields that allow HTML (news content, product sections, use cases) must be printed through `sanitize_html()`, never raw.
+- **SQL:** prepared statements only.
+- Never commit `config/config.php` or DB dumps (root `*.sql` is git-ignored).
 
 ## Database
 
 ### IMPORTANT: Keep sql/schema.sql Updated!
 When making database changes:
-1. Always update `sql/schema.sql` to reflect the final schema
-2. This file is used for production deployment on Vimexx
-3. Run `setup-database.php` for initial setup, or import `sql/schema.sql` directly
+1. Update `sql/schema.sql` so a fresh install gets the final schema (name constraints explicitly, e.g. `fk_<table>_<column>`)
+2. Add a migration in `sql/migrations/` for the existing production database (applied via phpMyAdmin; tell the user to back up first)
+3. Verify: a fresh install from `schema.sql` and a migrated database should end up with identical structure
 
-### Current Tables
-- `admins` - Website admin accounts
-- `publications` - Papers and talks (displayed on publications page)
-- `forum_categories` - Forum categories (not yet active)
-- `forum_posts` - Forum posts (not yet active)
+### Tables
+- `users` - All accounts (roles, status `invited`/`active`/`inactive`, token hash)
+- `publications` - Papers and talks
+- `news_posts` - News page
+- `page_sections` - ARIbrain product page sections
+- `use_cases` - Use Cases page
+- `team_members` - About page (photos in `assets/images/team/`)
+- `forum_questions`, `forum_replies`, `forum_tags`, `forum_question_tags` - Community forum
+
+Vimexx runs an older MySQL: use `utf8mb4_general_ci`, not `utf8mb4_0900_ai_ci`.
 
 ### Local Development
 ```bash
 mysql -u admin_peek -p -h 127.0.0.1 aribrain_db
 ```
 
-## Admin Panel
-
-Access: `index.php?page=admin/login`
-
-Features:
-- Publications management (add/edit/delete papers and talks)
-- Forum management (coming soon)
-
-### Adding New Admin Pages
-1. Create `pages/admin/newpage.php`
-2. Add to `$adminPages` array in `index.php`
-3. Update sidebar nav in dashboard.php and other admin pages
-
 ## Key Patterns
 
-### Adding a New Page
+### Adding a New Public Page
 1. Create `pages/newpage.php`
-2. Add to `$validPages` array in `index.php`
-3. Add to `$navItems` array in `config/config.php`
+2. Add to `$validPages` in `index.php`
+3. Add to `$navItems` in `config/config.php` (and `config.example.php`)
 
-### Routing
-- Public: `index.php?page=pagename`
-- Admin: `index.php?page=admin/pagename`
+### Adding a New Admin Page
+1. Create `pages/admin/newpage.php`: require `includes/bootstrap.php`, call `requireAdminPanel()`/`requireAdmin()`, set `$adminTitle` + `$activePage`, wrap content in `includes/admin/layout-start.php` / `layout-end.php`
+2. Add `'admin/newpage'` to `$standalonePages` in `index.php`
+3. Add the link in `includes/admin/sidebar.php` (and optionally a dashboard card)
+
+### Sending Email
+Use `send_branded_email()` from `includes/mail.php` (PHP `mail()`, works on Vimexx). Don't copy the HTML template.
 
 ### Styling
 - CSS variables defined in `:root` in style.css
@@ -96,10 +119,10 @@ php -S localhost:8000
 
 ## Deployment to Vimexx
 
-1. Update `config/config.php` with production DB credentials
-2. Import `sql/schema.sql` via phpMyAdmin or MySQL CLI
-3. Create first admin account via `index.php?page=admin/login`
-4. Delete `setup-database.php` from production server
+1. `config/config.php` on the server holds production DB credentials (not in git)
+2. Fresh install: import `sql/schema.sql`, then create the first admin at `index.php?page=admin/login`
+3. Existing install: back up, then run any new `sql/migrations/*.sql` via phpMyAdmin, then upload code via FTP
+4. Never upload `setup-database.php`, `.git/`, `CLAUDE.md` or SQL dumps
 
 ## Related
 - Main app repo: https://github.com/AriBrain/ari-core

@@ -1,11 +1,10 @@
 <?php
-require_once __DIR__ . '/../../includes/admin/auth.php';
-require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/bootstrap.php';
 
-$auth = new AdminAuth();
-$auth->requireLogin();
+$auth = new Auth();
+$auth->requireAdminPanel();
 
-$currentAdmin = $auth->getCurrentAdmin();
+$currentUser = $auth->currentUser();
 $db = Database::getInstance()->getConnection();
 
 $message = '';
@@ -22,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Reply content is required';
         } else {
             $stmt = $db->prepare("INSERT INTO forum_replies (question_id, content, author_name, is_admin_reply, admin_id) VALUES (?, ?, ?, 1, ?)");
-            $stmt->execute([$questionId, $content, $currentAdmin['username'], $currentAdmin['id']]);
+            $stmt->execute([$questionId, $content, $currentUser['name'], $currentUser['id']]);
             
             $db->prepare("UPDATE forum_questions SET is_answered = 1 WHERE id = ?")->execute([$questionId]);
             $message = 'Reply posted successfully';
@@ -83,7 +82,7 @@ if (isset($_GET['q'])) {
     $selectedQuestion = $stmt->fetch();
     
     if ($selectedQuestion) {
-        $stmt = $db->prepare("SELECT r.*, a.username as admin_username FROM forum_replies r LEFT JOIN admins a ON r.admin_id = a.id WHERE r.question_id = ? ORDER BY r.created_at ASC");
+        $stmt = $db->prepare("SELECT r.*, COALESCE(u.name, r.author_name) AS admin_username FROM forum_replies r LEFT JOIN users u ON r.admin_id = u.id WHERE r.question_id = ? ORDER BY r.created_at ASC");
         $stmt->execute([$qId]);
         $replies = $stmt->fetchAll();
     }
@@ -108,31 +107,11 @@ function timeAgo($datetime) {
     if ($diff < 86400) return floor($diff / 3600) . 'h ago';
     return date('M j', $time);
 }
+
+$adminTitle = 'Forum Management';
+$activePage = 'forum';
+require __DIR__ . '/../../includes/admin/layout-start.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Forum - Admin - <?php echo SITE_NAME; ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/css/style.css">
-    <link rel="stylesheet" href="assets/css/admin.css">
-</head>
-<body class="admin-body">
-    <div class="admin-layout">
-        <?php $activePage = 'forum'; require __DIR__ . '/../../includes/admin/sidebar.php'; ?>
-        
-        <main class="admin-main">
-            <header class="admin-header">
-                <h1>Forum Management</h1>
-                <div class="admin-user">
-                    <span>Welcome, <?php echo htmlspecialchars($currentAdmin['username']); ?></span>
-                </div>
-            </header>
-            
-            <div class="admin-content">
                 <?php if ($message): ?>
                     <div class="admin-alert admin-alert-success"><?php echo htmlspecialchars($message); ?></div>
                 <?php endif; ?>
@@ -164,14 +143,14 @@ function timeAgo($datetime) {
                         </div>
                         
                         <div class="admin-question-actions">
-                            <form method="POST" style="display:inline">
+                            <form method="POST" style="display:inline"><?php echo csrf_field(); ?>
                                 <input type="hidden" name="action" value="toggle_featured">
                                 <input type="hidden" name="id" value="<?php echo $selectedQuestion['id']; ?>">
                                 <button type="submit" class="btn btn-sm <?php echo $selectedQuestion['is_featured'] ? 'btn-primary' : 'btn-outline'; ?>">
                                     <?php echo $selectedQuestion['is_featured'] ? 'Unfeature' : 'Feature'; ?>
                                 </button>
                             </form>
-                            <form method="POST" style="display:inline">
+                            <form method="POST" style="display:inline"><?php echo csrf_field(); ?>
                                 <input type="hidden" name="action" value="toggle_approval">
                                 <input type="hidden" name="type" value="question">
                                 <input type="hidden" name="id" value="<?php echo $selectedQuestion['id']; ?>">
@@ -179,7 +158,7 @@ function timeAgo($datetime) {
                                     <?php echo $selectedQuestion['is_approved'] ? 'Hide' : 'Approve'; ?>
                                 </button>
                             </form>
-                            <form method="POST" style="display:inline" onsubmit="return confirm('Delete this question and all replies?')">
+                            <form method="POST" style="display:inline" onsubmit="return confirm('Delete this question and all replies?')"><?php echo csrf_field(); ?>
                                 <input type="hidden" name="action" value="delete_question">
                                 <input type="hidden" name="id" value="<?php echo $selectedQuestion['id']; ?>">
                                 <button type="submit" class="btn btn-sm btn-danger">Delete</button>
@@ -203,13 +182,13 @@ function timeAgo($datetime) {
                                 <span><?php echo timeAgo($reply['created_at']); ?></span>
                                 <?php if (!$reply['is_approved']): ?><span class="admin-hidden-badge">Hidden</span><?php endif; ?>
                                 <div class="admin-reply-actions">
-                                    <form method="POST" style="display:inline">
+                                    <form method="POST" style="display:inline"><?php echo csrf_field(); ?>
                                         <input type="hidden" name="action" value="toggle_approval">
                                         <input type="hidden" name="type" value="reply">
                                         <input type="hidden" name="id" value="<?php echo $reply['id']; ?>">
                                         <button type="submit" class="btn btn-sm btn-outline"><?php echo $reply['is_approved'] ? 'Hide' : 'Show'; ?></button>
                                     </form>
-                                    <form method="POST" style="display:inline" onsubmit="return confirm('Delete this reply?')">
+                                    <form method="POST" style="display:inline" onsubmit="return confirm('Delete this reply?')"><?php echo csrf_field(); ?>
                                         <input type="hidden" name="action" value="delete_reply">
                                         <input type="hidden" name="id" value="<?php echo $reply['id']; ?>">
                                         <button type="submit" class="btn btn-sm btn-danger">Delete</button>
@@ -221,7 +200,7 @@ function timeAgo($datetime) {
                         
                         <div class="admin-reply-form">
                             <h4>Reply as Team</h4>
-                            <form method="POST">
+                            <form method="POST"><?php echo csrf_field(); ?>
                                 <input type="hidden" name="action" value="reply">
                                 <input type="hidden" name="question_id" value="<?php echo $selectedQuestion['id']; ?>">
                                 <div class="admin-form-group">
@@ -279,7 +258,7 @@ function timeAgo($datetime) {
                                     <td><?php echo timeAgo($q['created_at']); ?></td>
                                     <td class="admin-table-actions">
                                         <a href="index.php?page=admin/forum&q=<?php echo $q['id']; ?>" class="btn btn-sm btn-outline">View</a>
-                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this question?')">
+                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this question?')"><?php echo csrf_field(); ?>
                                             <input type="hidden" name="action" value="delete_question">
                                             <input type="hidden" name="id" value="<?php echo $q['id']; ?>">
                                             <button type="submit" class="btn btn-sm btn-danger">Delete</button>
@@ -295,7 +274,7 @@ function timeAgo($datetime) {
                 <div class="admin-section">
                     <h2>Tags</h2>
                     
-                    <form method="POST" class="admin-inline-form">
+                    <form method="POST" class="admin-inline-form"><?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="create_tag">
                         <input type="text" name="name" placeholder="New tag name" required>
                         <input type="color" name="color" value="#6bcf8e">
@@ -318,7 +297,7 @@ function timeAgo($datetime) {
                                 <td><span style="display:inline-block;width:20px;height:20px;background:<?php echo htmlspecialchars($tag['color']); ?>;border-radius:4px;"></span></td>
                                 <td><?php echo $tag['usage_count']; ?> questions</td>
                                 <td>
-                                    <form method="POST" style="display:inline" onsubmit="return confirm('Delete this tag?')">
+                                    <form method="POST" style="display:inline" onsubmit="return confirm('Delete this tag?')"><?php echo csrf_field(); ?>
                                         <input type="hidden" name="action" value="delete_tag">
                                         <input type="hidden" name="id" value="<?php echo $tag['id']; ?>">
                                         <button type="submit" class="btn btn-sm btn-danger">Delete</button>
@@ -331,8 +310,4 @@ function timeAgo($datetime) {
                 </div>
                 
                 <?php endif; ?>
-            </div>
-        </main>
-    </div>
-</body>
-</html>
+            <?php require __DIR__ . '/../../includes/admin/layout-end.php'; ?>

@@ -1,11 +1,10 @@
 <?php
-require_once __DIR__ . '/../../includes/admin/auth.php';
-require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/bootstrap.php';
 
-$auth = new AdminAuth();
-$auth->requireLogin();
+$auth = new Auth();
+$auth->requireAdminPanel();
 
-$currentAdmin = $auth->getCurrentAdmin();
+$currentUser = $auth->currentUser();
 $db = Database::getInstance()->getConnection();
 
 $tab = $_GET['tab'] ?? 'product';
@@ -33,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 if ($action === 'create') {
                     $stmt = $db->prepare("INSERT INTO page_sections (page_slug, title, content, sort_order, is_active, created_by) VALUES ('product', ?, ?, ?, ?, ?)");
-                    $stmt->execute([$title, $content, $sort_order, $is_active, $currentAdmin['id']]);
+                    $stmt->execute([$title, $content, $sort_order, $is_active, $currentUser['id']]);
                     $message = 'Section created';
                 } else {
                     $stmt = $db->prepare("UPDATE page_sections SET title=?, content=?, sort_order=?, is_active=? WHERE id=?");
@@ -64,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 if ($action === 'create') {
                     $stmt = $db->prepare("INSERT INTO use_cases (title, summary, content, image_url, sort_order, is_featured, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->execute([$title, $summary, $content, $image_url, $sort_order, $is_featured, $is_active, $currentAdmin['id']]);
+                    $stmt->execute([$title, $summary, $content, $image_url, $sort_order, $is_featured, $is_active, $currentUser['id']]);
                     $message = 'Use case created';
                 } else {
                     $stmt = $db->prepare("UPDATE use_cases SET title=?, summary=?, content=?, image_url=?, sort_order=?, is_featured=?, is_active=? WHERE id=?");
@@ -189,37 +188,11 @@ $useCases = $db->query("SELECT * FROM use_cases ORDER BY sort_order, id")->fetch
 $teamMembers = $db->query("SELECT * FROM team_members ORDER BY sort_order, id")->fetchAll();
 
 $tabLabels = ['product' => 'ARIbrain', 'use-cases' => 'Use Cases', 'team' => 'Team'];
+
+$adminTitle = 'Pages';
+$activePage = 'pages';
+require __DIR__ . '/../../includes/admin/layout-start.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pages - Admin - <?php echo SITE_NAME; ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/css/style.css">
-    <link rel="stylesheet" href="assets/css/admin.css">
-    <style>
-        .admin-tabs { display: flex; gap: 4px; margin-bottom: 24px; background: var(--color-bg-alt); padding: 4px; border-radius: var(--radius-md); }
-        .admin-tab { padding: 10px 20px; font-size: 0.9375rem; font-weight: 500; color: var(--color-text-muted); text-decoration: none; border-radius: var(--radius-sm); transition: all var(--transition); }
-        .admin-tab:hover { color: var(--color-text); background: var(--color-bg); }
-        .admin-tab.active { color: white; background: var(--color-primary); }
-    </style>
-</head>
-<body class="admin-body">
-    <div class="admin-layout">
-        <?php $activePage = 'pages'; require __DIR__ . '/../../includes/admin/sidebar.php'; ?>
-
-        <main class="admin-main">
-            <header class="admin-header">
-                <h1>Pages</h1>
-                <div class="admin-user">
-                    <span>Welcome, <?php echo htmlspecialchars($currentAdmin['username']); ?></span>
-                </div>
-            </header>
-
-            <div class="admin-content">
                 <div class="admin-tabs">
                     <?php foreach ($tabLabels as $key => $label): ?>
                         <a href="index.php?page=admin/pages&tab=<?php echo $key; ?>" class="admin-tab <?php echo $tab === $key ? 'active' : ''; ?>"><?php echo $label; ?></a>
@@ -238,7 +211,7 @@ $tabLabels = ['product' => 'ARIbrain', 'use-cases' => 'Use Cases', 'team' => 'Te
                 <div class="admin-section">
                     <h2><?php echo $editItem ? 'Edit' : 'Add New'; ?> Section</h2>
                     <p style="color: var(--color-text-muted); font-size: 0.875rem; margin-bottom: 16px; margin-top: -12px;">Content sections displayed on the ARIbrain product page. HTML is supported in the content field.</p>
-                    <form method="POST" class="admin-form-grid">
+                    <form method="POST" class="admin-form-grid"><?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="<?php echo $editItem ? 'update' : 'create'; ?>">
                         <input type="hidden" name="tab" value="product">
                         <?php if ($editItem): ?>
@@ -292,7 +265,7 @@ $tabLabels = ['product' => 'ARIbrain', 'use-cases' => 'Use Cases', 'team' => 'Te
                                     <td><?php echo $s['is_active'] ? '<span class="admin-badge admin-badge-success">Active</span>' : '<span class="admin-badge">Hidden</span>'; ?></td>
                                     <td class="admin-table-actions">
                                         <a href="index.php?page=admin/pages&tab=product&edit=<?php echo $s['id']; ?>" class="btn btn-sm btn-outline">Edit</a>
-                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this section?')">
+                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this section?')"><?php echo csrf_field(); ?>
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="tab" value="product">
                                             <input type="hidden" name="id" value="<?php echo $s['id']; ?>">
@@ -310,7 +283,7 @@ $tabLabels = ['product' => 'ARIbrain', 'use-cases' => 'Use Cases', 'team' => 'Te
                 <?php elseif ($tab === 'use-cases'): ?>
                 <div class="admin-section">
                     <h2><?php echo $editItem ? 'Edit' : 'Add New'; ?> Use Case</h2>
-                    <form method="POST" class="admin-form-grid">
+                    <form method="POST" class="admin-form-grid"><?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="<?php echo $editItem ? 'update' : 'create'; ?>">
                         <input type="hidden" name="tab" value="use-cases">
                         <?php if ($editItem): ?>
@@ -383,7 +356,7 @@ $tabLabels = ['product' => 'ARIbrain', 'use-cases' => 'Use Cases', 'team' => 'Te
                                     <td><?php echo $uc['is_active'] ? '<span class="admin-badge admin-badge-success">Active</span>' : '<span class="admin-badge">Hidden</span>'; ?></td>
                                     <td class="admin-table-actions">
                                         <a href="index.php?page=admin/pages&tab=use-cases&edit=<?php echo $uc['id']; ?>" class="btn btn-sm btn-outline">Edit</a>
-                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this use case?')">
+                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this use case?')"><?php echo csrf_field(); ?>
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="tab" value="use-cases">
                                             <input type="hidden" name="id" value="<?php echo $uc['id']; ?>">
@@ -401,7 +374,7 @@ $tabLabels = ['product' => 'ARIbrain', 'use-cases' => 'Use Cases', 'team' => 'Te
                 <?php else: ?>
                 <div class="admin-section">
                     <h2><?php echo $editItem ? 'Edit' : 'Add New'; ?> Team Member</h2>
-                    <form method="POST" enctype="multipart/form-data" class="admin-form-grid">
+                    <form method="POST" enctype="multipart/form-data" class="admin-form-grid"><?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="<?php echo $editItem ? 'update' : 'create'; ?>">
                         <input type="hidden" name="tab" value="team">
                         <input type="hidden" name="existing_image_url" value="<?php echo htmlspecialchars($editItem['image_url'] ?? ''); ?>">
@@ -518,7 +491,7 @@ $tabLabels = ['product' => 'ARIbrain', 'use-cases' => 'Use Cases', 'team' => 'Te
                                     <td><?php echo $tm['is_active'] ? '<span class="admin-badge admin-badge-success">Active</span>' : '<span class="admin-badge">Hidden</span>'; ?></td>
                                     <td class="admin-table-actions">
                                         <a href="index.php?page=admin/pages&tab=team&edit=<?php echo $tm['id']; ?>" class="btn btn-sm btn-outline">Edit</a>
-                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this team member?')">
+                                        <form method="POST" style="display:inline" onsubmit="return confirm('Delete this team member?')"><?php echo csrf_field(); ?>
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="tab" value="team">
                                             <input type="hidden" name="id" value="<?php echo $tm['id']; ?>">
@@ -532,10 +505,7 @@ $tabLabels = ['product' => 'ARIbrain', 'use-cases' => 'Use Cases', 'team' => 'Te
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
-            </div>
-        </main>
-    </div>
-    <script>
+            <script>
     var MAX_SIZE = 1.9 * 1024 * 1024; // 1.9MB to stay safely under 2MB
 
     function compressAndPreview(input) {
@@ -631,5 +601,4 @@ $tabLabels = ['product' => 'ARIbrain', 'use-cases' => 'Use Cases', 'team' => 'Te
         });
     }
     </script>
-</body>
-</html>
+<?php require __DIR__ . '/../../includes/admin/layout-end.php'; ?>
