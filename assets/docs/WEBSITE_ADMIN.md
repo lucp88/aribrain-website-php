@@ -25,7 +25,7 @@ Documentation for deploying, managing, and maintaining the ARIbrain website.
 | **Host** | Vimexx (shared hosting) |
 | **Domain** | aribrain.eu |
 | **Stack** | PHP + MySQL |
-| **File transfer** | FileZilla (FTP) |
+| **Deploys** | GitHub Actions → FTP(S) (see [Deployment](#deployment)); FileZilla for manual fixes |
 | **DB management** | phpMyAdmin (via Vimexx control panel) |
 | **Local dev** | `php -S localhost:8000` |
 
@@ -37,33 +37,90 @@ FTP credentials are available in the Vimexx control panel. Files are uploaded to
 
 ## Deployment
 
-### First-time Setup
+Deploys run from GitHub Actions (`.github/workflows/deploy.yml`) and upload over FTP(S). No more dragging files in FileZilla.
 
-1. **Create database** in Vimexx control panel (MySQL-beheer)
-2. **Import schema** — upload `sql/schema.sql` via phpMyAdmin
-3. **Update config** — set production DB credentials in `config/config.php`:
-   ```php
-   define('DB_HOST', 'localhost');
-   define('DB_NAME', 'your_db_name');
-   define('DB_USER', 'your_db_user');
-   define('DB_PASS', 'your_db_password');
-   define('SITE_URL', 'https://aribrain.eu');
-   ```
-4. **Upload files** via FileZilla to `public_html`
-5. **Create first admin** — visit `https://aribrain.eu/index.php?page=admin/login` (setup form appears when no admin exists)
+### How a Deploy Works
 
-### Updating the Site
+1. Merge your changes into `main` (via a pull request)
+2. GitHub → **Actions** → **Deploy** → **Run workflow** (branch `main`)
+3. **Check migrations** — uploads a temporary migration runner to `_deploy/` on the server and lists pending migrations in the run summary
+4. **Migrate database** — only if migrations are pending. The run **pauses** with *"Review deployments"*. Read the list, then click **Approve and deploy**. The server then:
+   - shows a "We'll be right back" page (maintenance mode)
+   - writes a full database backup to `aribrain-backups/` **next to** `public_html` (not downloadable)
+   - runs the migrations in order and records them
+5. **Deploy code** — uploads only changed files, deletes files that were removed from the repo, ends maintenance mode, checks that the homepage responds
+6. **Clean up** — always runs: deletes `_deploy/` from the server again
 
-1. Make changes locally
-2. Test with `php -S localhost:8000`
-3. Upload changed files via FileZilla
-4. If database schema changed: run the matching file from `sql/migrations/` via phpMyAdmin (see [Migrations](#migrations))
+Rejecting at step 4 cancels the deploy; nothing changes.
 
-### Important: Do NOT Upload
+The upload never touches: `config/config.php`, uploaded team photos (`assets/images/team/`), `setup-database.php`, `sql/`, `deploy/`, `.github/`, `CLAUDE.md`, `*.sql`. Files that were on the server before the pipeline existed are never deleted by it (it only deletes files it uploaded itself, tracked in `.ftp-deploy-sync-state.json` on the server).
+
+### One-time Setup
+
+**1. Deploy token** — generate one locally (don't share it, don't commit it):
+```bash
+openssl rand -hex 32
+```
+
+**2. Server config** — add it to `config/config.php` on the server (FileZilla or DirectAdmin file manager):
+```php
+define('DEPLOY_TOKEN', 'the-64-character-token');
+```
+Optional: `define('BACKUP_DIR', '/absolute/path/outside/public_html');` if the default backup folder next to `public_html` is not writable.
+
+**3. GitHub secrets** — repo → Settings → Secrets and variables → Actions → **Secrets**:
+
+| Secret | Value |
+|--------|-------|
+| `FTP_SERVER` | FTP hostname (from FileZilla Site Manager / Vimexx) |
+| `FTP_USERNAME` | FTP username |
+| `FTP_PASSWORD` | FTP password |
+| `DEPLOY_TOKEN` | Same token as in `config/config.php` |
+
+**4. GitHub variables** — same page → **Variables**:
+
+| Variable | Value |
+|----------|-------|
+| `FTP_SERVER_DIR` | Folder FileZilla uploads into, relative to the FTP login folder, **with trailing slash**, e.g. `domains/aribrain.eu/public_html/` |
+| `SITE_URL` | `https://aribrain.eu` (default if not set) |
+| `FTP_PROTOCOL` | `ftps` (default). Only set to `ftp` if Vimexx doesn't support FTPS (see troubleshooting) |
+| `FTP_PORT` | `21` (default) |
+
+**5. Approval step** — repo → Settings → **Environments** → **New environment** `production`:
+- **Required reviewers**: add yourself. Leave "Prevent self-review" **off** (you start and approve your own deploys).
+- **Deployment branches and tags**: *Selected branches* → `main`.
+
+### First Deploy with the Pipeline
+
+The first run uploads every file (the server has no sync state yet) and doesn't delete anything. Afterwards, delete files that no longer exist in the repo by hand via FileZilla, for example after PR #2: `includes/admin/auth.php`, `pages/admin/forgot-password.php`, `pages/admin/reset-password.php` — and `setup-database.php` if it's still there.
+
+### When a Migration Fails
+
+The run stops at **Migrate database**, the code is **not** deployed and the site stays in maintenance mode. The run summary shows which migration and statement failed and the backup file name; the full MySQL error is in `aribrain-backups/migrate-error-*.log` on the server (not in GitHub, because logs of a public repo are public).
+
+1. phpMyAdmin → **Import** the backup from `aribrain-backups/` (download it via FileZilla first). This restores the database to its state before the deploy.
+2. Delete the file `.maintenance` in `public_html` via FileZilla → site is back on the old version.
+3. Fix the migration in a new PR, merge, run Deploy again.
+
+### If You Already Ran a Migration by Hand
+
+Tell the pipeline it's done, in phpMyAdmin:
+```sql
+CREATE TABLE IF NOT EXISTS schema_migrations (migration VARCHAR(255) NOT NULL PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+INSERT INTO schema_migrations (migration) VALUES ('001_merge_admins_into_users');
+```
+
+### Fresh Install (new server)
+
+1. Create the database in the Vimexx control panel and import `sql/schema.sql` via phpMyAdmin
+2. Upload `config/config.php` with the DB credentials and `DEPLOY_TOKEN` (start from `config/config.example.php`)
+3. Run the Deploy workflow
+4. Create the first admin at `https://aribrain.eu/index.php?page=admin/login` (setup form appears only while no admin exists)
+
+### Never Upload
 
 - `setup-database.php` (security risk)
-- `.git/` directory
-- `CLAUDE.md` (internal documentation)
+- `.git/` directory, `CLAUDE.md`
 - Database dumps (`aribrain_dump.sql` etc.) — anything in `public_html` can be downloaded by anyone
 
 ### Exporting Local Data to Production
@@ -107,11 +164,14 @@ The site uses PDO with a singleton pattern (`config/database.php`). All queries 
 
 ### Migrations
 
-Changes to an existing database go in `sql/migrations/NNN_description.sql`, numbered in order. To apply one in production:
+Changes to an existing database go in `sql/migrations/NNN_description.sql` (three digits, lowercase, underscores), numbered in order. The deploy pipeline runs pending ones automatically after your approval — **don't import them by hand** (the pipeline wouldn't know they ran; see below if you already did).
 
-1. phpMyAdmin → **Export** → Quick → SQL (backup first; MySQL can't roll back table changes)
-2. phpMyAdmin → **Import** → choose the migration file
-3. Upload the matching code
+Writing a migration:
+- Plain SQL statements separated by `;`. No `DELIMITER` / stored procedures.
+- Also update `sql/schema.sql` with the end result, and add the migration name to the `INSERT INTO schema_migrations` at the bottom of `schema.sql` so fresh installs don't run it.
+- MySQL can't roll back table changes. Keep migrations small; the pipeline takes a full backup before running them.
+
+Applied migrations are recorded in the `schema_migrations` table.
 
 | Migration | What it does |
 |-----------|--------------|
@@ -444,6 +504,15 @@ Replace all occurrences with `utf8mb4_general_ci`:
 ```bash
 sed -i 's/utf8mb4_0900_ai_ci/utf8mb4_general_ci/g' your_dump.sql
 ```
+
+**Deploy fails at "Upload temporary migration runner" with a TLS/SSL error**
+Vimexx may present a certificate for its own server name instead of your domain. Set the `FTP_SERVER` secret to the hostname on the certificate (FileZilla shows it when you connect). Only if FTPS is not offered at all, set the `FTP_PROTOCOL` variable to `ftp`.
+
+**Deploy fails at "List pending migrations" with 503 "DEPLOY_TOKEN is not configured" or 403**
+`DEPLOY_TOKEN` is missing from `config/config.php` on the server, or differs from the GitHub secret.
+
+**Site stuck on "We'll be right back"**
+A migration failed or a deploy was interrupted. See [When a Migration Fails](#when-a-migration-fails); deleting `.maintenance` in `public_html` ends maintenance mode.
 
 **Gate login not working after deploying**
 Make sure `config/config.php` has the correct production database credentials.

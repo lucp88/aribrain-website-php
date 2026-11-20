@@ -18,6 +18,7 @@ Full admin/deployment guide: `assets/docs/WEBSITE_ADMIN.md` (keep it in sync wit
 │   ├── auth.php              # Auth class (login, roles, tokens) — single `users` table
 │   ├── mail.php              # send_branded_email(), send_invitation_email(), send_password_reset_email()
 │   ├── sanitize.php          # sanitize_html() for CMS HTML output
+│   ├── maintenance.php       # 503 page while /.maintenance exists (checked in bootstrap.php)
 │   ├── auth-layout-start.php / auth-layout-end.php   # Shared layout for login/password pages
 │   ├── header.php / footer.php                       # Public site layout
 │   └── admin/
@@ -35,8 +36,10 @@ Full admin/deployment guide: `assets/docs/WEBSITE_ADMIN.md` (keep it in sync wit
 │       └── users.php         # Admin only: invite/resend/activate/delete users
 ├── sql/
 │   ├── schema.sql            # Full schema for fresh installs (KEEP UPDATED)
-│   └── migrations/           # NNN_description.sql for existing databases
+│   └── migrations/           # NNN_description.sql, run by the deploy pipeline
 ├── setup-database.php        # One-time DB setup (git-ignored; delete after use)
+├── deploy/migrate.php        # Migration runner, only on the server during a deploy (as _deploy/)
+├── .github/                  # workflows/deploy.yml + scripts/deploy.sh
 └── assets/
     ├── css/style.css, admin.css
     ├── js/main.js
@@ -71,8 +74,9 @@ Full admin/deployment guide: `assets/docs/WEBSITE_ADMIN.md` (keep it in sync wit
 ### IMPORTANT: Keep sql/schema.sql Updated!
 When making database changes:
 1. Update `sql/schema.sql` so a fresh install gets the final schema (name constraints explicitly, e.g. `fk_<table>_<column>`)
-2. Add a migration in `sql/migrations/` for the existing production database (applied via phpMyAdmin; tell the user to back up first)
-3. Verify: a fresh install from `schema.sql` and a migrated database should end up with identical structure
+2. Add a migration `sql/migrations/NNN_description.sql` for the existing production database (plain `;`-separated SQL, no `DELIMITER`). The deploy pipeline runs it after approval.
+3. Add the migration name to the `INSERT INTO schema_migrations` at the bottom of `schema.sql`, so fresh installs don't run it
+4. Verify: a fresh install from `schema.sql` and a migrated database should end up with identical structure
 
 ### Tables
 - `users` - All accounts (roles, status `invited`/`active`/`inactive`, token hash)
@@ -119,10 +123,20 @@ php -S localhost:8000
 
 ## Deployment to Vimexx
 
-1. `config/config.php` on the server holds production DB credentials (not in git)
-2. Fresh install: import `sql/schema.sql`, then create the first admin at `index.php?page=admin/login`
-3. Existing install: back up, then run any new `sql/migrations/*.sql` via phpMyAdmin, then upload code via FTP
-4. Never upload `setup-database.php`, `.git/`, `CLAUDE.md` or SQL dumps
+GitHub Actions workflow `.github/workflows/deploy.yml`, started manually (Actions → Deploy → Run workflow on `main`). Full setup and failure handling: `assets/docs/WEBSITE_ADMIN.md` → Deployment.
+
+1. **Check migrations**: `.github/scripts/deploy.sh upload-runner` puts `deploy/migrate.php` + `sql/migrations/` in `<server-dir>/_deploy/`; the runner's `status` lists pending migrations
+2. **Migrate database** (only if pending): pauses for approval (environment `production`), then the runner sets `/.maintenance`, writes a backup next to the web root and runs pending migrations, recording them in `schema_migrations`
+3. **Deploy code**: `SamKirkland/FTP-Deploy-Action` syncs changed files (excludes `config/config.php`, `assets/images/team/`, `deploy/`, `sql/`, …), then `maintenance_off` + smoke test
+4. **Clean up**: always removes `_deploy/`
+
+Rules:
+- The repo is **public** and so are workflow logs: never print secrets, server paths or database contents. The runner returns only names/status; details go to a log next to the backups.
+- Pin third-party actions to a full commit SHA (with a `# vX.Y.Z` comment).
+- Don't apply migrations by hand in production; the pipeline must record them.
+- `config/config.php` on the server holds DB credentials and `DEPLOY_TOKEN` (not in git). Never upload `setup-database.php`, `CLAUDE.md` or SQL dumps.
+
+Test the pipeline locally: run `deploy.sh` against a local FTP server (e.g. `pyftpdlib`) whose home contains `domains/aribrain.eu/public_html/`, served with `php -S`.
 
 ## Related
 - Main app repo: https://github.com/AriBrain/ari-core
