@@ -18,6 +18,7 @@ Full admin/deployment guide: `assets/docs/WEBSITE_ADMIN.md` (keep it in sync wit
 │   ├── auth.php              # Auth class (login, roles, tokens) — single `users` table
 │   ├── mail.php              # send_branded_email(), send_invitation_email(), send_password_reset_email()
 │   ├── sanitize.php          # sanitize_html() for CMS HTML output
+│   ├── docs-renderer.php     # USER_GUIDE.md -> Docs page (uses vendor/Parsedown.php)
 │   ├── maintenance.php       # 503 page while /.maintenance exists (checked in bootstrap.php)
 │   ├── auth-layout-start.php / auth-layout-end.php   # Shared layout for login/password pages
 │   ├── header.php / footer.php                       # Public site layout
@@ -105,6 +106,9 @@ mysql -u admin_peek -p -h 127.0.0.1 aribrain_db
 1. Create `pages/admin/newpage.php`: require `includes/bootstrap.php`, call `requireAdminPanel()`/`requireAdmin()`, set `$adminTitle` + `$activePage`, wrap content in `includes/admin/layout-start.php` / `layout-end.php`
 2. Add `'admin/newpage'` to `$standalonePages` in `index.php`
 3. Add the link in `includes/admin/sidebar.php` (and optionally a dashboard card)
+
+### Docs Page (User Guide)
+`pages/docs.php` renders `assets/docs/USER_GUIDE.md` (Parsedown 1.8.0 in `includes/vendor/`, safe mode) via `includes/docs-renderer.php`: `##` headings become sections + sidebar links, tables/lists get the `docs-*` classes. To change the guide, edit the Markdown only; it is live after the next deploy.
 
 ### Sending Email
 Use `send_branded_email()` from `includes/mail.php` (PHP `mail()`, works on Vimexx). Don't copy the HTML template.
