@@ -21,3 +21,6 @@ setup-database.php
 /*.sql
 *.dump.sql
 *_dump.sql
+
+# Maintenance flag set during deploys
+/.maintenance

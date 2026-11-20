@@ -1,0 +1,200 @@
+# Deploy to production (Vimexx) over FTP(S).
+#
+# Start it manually: GitHub -> Actions -> Deploy -> Run workflow (branch: main).
+#
+#   1. Check migrations   Uploads a temporary migration runner and lists pending migrations
+#   2. Migrate database   Only if migrations are pending. PAUSES until you click
+#                         "Review deployments -> Approve" (environment "production").
+#                         Then: maintenance mode on, database backup, run migrations.
+#   3. Deploy code        Uploads changed files, maintenance mode off, smoke test
+#   4. Clean up           Always runs: removes the temporary migration runner
+#
+# Setup and troubleshooting: assets/docs/WEBSITE_ADMIN.md -> "Deployment".
+# The repository is public: never print database contents or secrets in this workflow.
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash   # explicit shell = "bash -eo pipefail"
+
+jobs:
+  prepare:
+    name: Check migrations
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      pending: ${{ steps.status.outputs.pending }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check configuration
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+          FTP_SERVER_DIR: ${{ vars.FTP_SERVER_DIR }}
+        run: |
+          missing=0
+          for name in FTP_SERVER FTP_USERNAME FTP_PASSWORD DEPLOY_TOKEN FTP_SERVER_DIR; do
+            if [ -z "${!name}" ]; then echo "::error::$name is not set (repository secrets/variables)"; missing=1; fi
+          done
+          case "$FTP_SERVER_DIR" in */) ;; *) echo "::error::FTP_SERVER_DIR must end with /"; missing=1 ;; esac
+          exit $missing
+
+      - name: Upload temporary migration runner
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_SERVER_DIR: ${{ vars.FTP_SERVER_DIR }}
+          FTP_PROTOCOL: ${{ vars.FTP_PROTOCOL || 'ftps' }}
+          FTP_PORT: ${{ vars.FTP_PORT || '21' }}
+        run: .github/scripts/deploy.sh upload-runner
+
+      - name: List pending migrations
+        id: status
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://aribrain.eu' }}
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: |
+          if ! resp=$(.github/scripts/deploy.sh runner status); then
+            echo "$resp"; echo "::error::Migration runner did not respond correctly"; exit 1
+          fi
+          pending=$(jq -r '.pending | length' <<<"$resp")
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
+          {
+            if [ "$pending" = "0" ]; then
+              echo "### No pending migrations"
+              echo "The code will be deployed without a database step."
+            else
+              echo "### $pending pending migration(s)"
+              echo "Approving the **Migrate database** job will back up the database, enable maintenance mode and run:"
+              jq -r '.pending[] | "- `\(.)`"' <<<"$resp"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq . <<<"$resp"
+
+  migrate:
+    name: Migrate database
+    needs: prepare
+    if: needs.prepare.outputs.pending != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production   # requires approval (Settings -> Environments -> production)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Back up database and run migrations
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://aribrain.eu' }}
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: |
+          if resp=$(.github/scripts/deploy.sh runner migrate); then
+            jq . <<<"$resp"
+            {
+              echo "### Migrations applied"
+              jq -r '.applied[] | "- `\(.)`"' <<<"$resp"
+              echo
+              echo "Backup on server: \`$(jq -r .backup <<<"$resp")\` (in the backup folder next to the web root)"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "$resp"
+            {
+              echo "### ❌ Migration failed — site is in maintenance mode"
+              echo '```json'; echo "$resp"; echo '```'
+              echo "See *Deployment → When a migration fails* in assets/docs/WEBSITE_ADMIN.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+  deploy:
+    name: Deploy code
+    needs: [prepare, migrate]
+    if: >-
+      always() &&
+      needs.prepare.result == 'success' &&
+      (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Upload changed files
+        uses: SamKirkland/FTP-Deploy-Action@3a9c65ae0fc12ac924ccef8afc26941cc43aad0b # v4.4.0
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ${{ vars.FTP_PROTOCOL || 'ftps' }}
+          port: ${{ vars.FTP_PORT || '21' }}
+          server-dir: ${{ vars.FTP_SERVER_DIR }}
+          log-level: minimal
+          # Excluded paths are never uploaded AND never deleted on the server.
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.DS_Store
+            .github/**
+            .claude/**
+            deploy/**
+            sql/**
+            *.sql
+            config/config.php
+            assets/images/team/**
+            setup-database.php
+            CLAUDE.md
+            .maintenance
+
+      - name: End maintenance mode
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://aribrain.eu' }}
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: .github/scripts/deploy.sh runner maintenance_off | jq .
+
+      - name: Smoke test
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://aribrain.eu' }}
+        run: |
+          code=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 30 "${SITE_URL%/}/index.php")
+          echo "index.php -> HTTP $code"
+          if [ "$code" != "200" ]; then echo "::error::Site returned HTTP $code after deploy"; exit 1; fi
+
+  cleanup:
+    name: Clean up
+    needs: [prepare, migrate, deploy]
+    if: always() && needs.prepare.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Remove temporary migration runner
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_SERVER_DIR: ${{ vars.FTP_SERVER_DIR }}
+          FTP_PROTOCOL: ${{ vars.FTP_PROTOCOL || 'ftps' }}
+          FTP_PORT: ${{ vars.FTP_PORT || '21' }}
+        run: .github/scripts/deploy.sh remove-runner

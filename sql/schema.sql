@@ -154,3 +154,13 @@ INSERT IGNORE INTO forum_tags (name, slug, color) VALUES
 ('General', 'general', '#6bcf8e'),
 ('fMRI', 'fmri', '#ec4899'),
 ('TDP', 'tdp', '#14b8a6');
+
+-- Applied migrations (managed by the deploy pipeline, see deploy/migrate.php).
+-- A fresh install already contains everything below, so mark it as applied.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    migration VARCHAR(255) NOT NULL PRIMARY KEY,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT IGNORE INTO schema_migrations (migration) VALUES
+('001_merge_admins_into_users');

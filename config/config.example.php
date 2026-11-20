@@ -11,6 +11,13 @@ define('DB_PASS', 'your_password');
 
 define('CONTACT_EMAIL', 'contact@aribrain.org');
 
+// Deploy pipeline (production only). Must equal the DEPLOY_TOKEN GitHub secret.
+// Generate with: openssl rand -hex 32   — leave empty to disable the migration runner.
+define('DEPLOY_TOKEN', '');
+// Optional: where the migration runner writes database backups. Must NOT be inside the web root.
+// Default: a folder "aribrain-backups" next to the web root (e.g. domains/aribrain.eu/aribrain-backups).
+// define('BACKUP_DIR', '/home/youruser/domains/aribrain.eu/aribrain-backups');
+
 $navItems = [
     ['title' => 'Home', 'url' => 'index.php', 'page' => 'home'],
     ['title' => 'ARIbrain', 'url' => 'index.php?page=product', 'page' => 'product'],
