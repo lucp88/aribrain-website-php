@@ -358,6 +358,20 @@ The content fields for pages, use cases, and news posts support HTML. Common pat
 <p>See our <a href="https://github.com/AriBrain/ari-core">GitHub repository</a>.</p>
 ```
 
+### Installation Page and the Mac Download
+
+`pages/install.php` (not editable in the admin panel) describes three ways to install ARIbrain: the standalone macOS app, the installer script and installing from source.
+
+The standalone app is not hosted on this website. It is a file on the **ari-core GitHub Releases**, and the download button links to `https://github.com/AriBrain/ari-core/releases/latest/download/ARIbrain-macOS-AppleSilicon.zip`.
+
+To publish a new version of the app:
+1. In ari-core, build the app (see `docs/BUILD_INSTRUCTIONS.md`) and zip it **with `ditto`**. Plain `zip -r` can break the app's signature, and macOS then reports the app as "damaged":
+   ```bash
+   cd dist && ditto -c -k --keepParent ARIbrain.app ARIbrain-macOS-AppleSilicon.zip
+   ```
+2. On GitHub: ari-core → Releases → Draft a new release. Create a tag (e.g. `v0.1.0`) and attach the zip. Keep the file name exactly `ARIbrain-macOS-AppleSilicon.zip`, so the website button always serves the newest release.
+3. The first time only: set `$standaloneAvailable = true;` at the top of `pages/install.php` and deploy. Until then, the button shows "coming soon".
+
 ---
 
 ## Email Service
