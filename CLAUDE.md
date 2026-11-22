@@ -41,6 +41,7 @@ Full admin/deployment guide: `assets/docs/WEBSITE_ADMIN.md` (keep it in sync wit
 ├── setup-database.php        # One-time DB setup (git-ignored; delete after use)
 ├── deploy/migrate.php        # Migration runner, only on the server during a deploy (as _deploy/)
 ├── .github/                  # workflows/deploy.yml + scripts/deploy.sh
+├── docs/                     # Internal docs, never deployed (DEPLOYMENT.md/.pdf: deploy process explained, Dutch)
 └── assets/
     ├── css/style.css, admin.css
     ├── js/main.js

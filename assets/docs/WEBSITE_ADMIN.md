@@ -53,7 +53,7 @@ Deploys run from GitHub Actions (`.github/workflows/deploy.yml`) and upload over
 
 Rejecting at step 4 cancels the deploy; nothing changes.
 
-The upload never touches: `config/config.php`, uploaded team photos (`assets/images/team/`), `setup-database.php`, `sql/`, `deploy/`, `.github/`, `CLAUDE.md`, `*.sql`. It only uploads files tracked in git, and it only deletes files it uploaded itself (tracked in `.aribrain-deploy-manifest`, stored next to `public_html`), so files that were already on the server are never deleted by it.
+The upload never touches: `config/config.php`, uploaded team photos (`assets/images/team/`), `setup-database.php`, `sql/`, `deploy/`, `docs/`, `.github/`, `CLAUDE.md`, `*.sql`. It only uploads files tracked in git, and it only deletes files it uploaded itself (tracked in `.aribrain-deploy-manifest`, stored next to `public_html`), so files that were already on the server are never deleted by it.
 
 ### One-time Setup
 
