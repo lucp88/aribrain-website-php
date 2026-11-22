@@ -119,7 +119,7 @@ remove_runner() {
 # Never uploaded, never deleted.
 is_excluded() {
     case "$1" in
-        .github/*|.claude/*|deploy/*|sql/*|*.sql) return 0 ;;
+        .github/*|.claude/*|deploy/*|docs/*|sql/*|*.sql) return 0 ;;
         config/config.php|setup-database.php|CLAUDE.md|.maintenance) return 0 ;;
         assets/images/team/*) return 0 ;;
         .git*|*/.git*|.DS_Store|*/.DS_Store) return 0 ;;
